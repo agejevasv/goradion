@@ -1,7 +1,11 @@
 # goradion
 Terminal based online radio player
 
-It uses and is compatible with the stations CSV file used by [pyradio](https://github.com/coderholic/pyradio).
+<img width="621" alt="goradion" src="https://github.com/agejevasv/goradion/assets/1682086/5d11d334-39f2-4c76-a12c-59cb14df80c2">
+
+Goradion is compatible with [pyradio](https://github.com/coderholic/pyradio) stations playlists.
+
+The stations can be toggled with Enter/Space keys or by using letter keys on a keyboard (a letter next to a radio station). The stations can also be toggled by a mouse click.
 
 ## Setup
 
