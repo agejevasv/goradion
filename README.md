@@ -13,8 +13,18 @@ The stations can be toggled with Enter/Space keys or by using letter keys on a k
 2. Download a latest version of [goradion](https://github.com/agejevasv/goradion/releases/latest) for your architecture.
 3. `chmod +x <downloaded-goradion-binary>`
 
-If you have your own or any [pyradio](https://github.com/coderholic/pyradio) stations CSV, you can pass it with a `-s <url or file>` flag, e.g. on my mac:
+If you have your own or any [pyradio](https://github.com/coderholic/pyradio) stations CSV, you can pass it with a `-s <url or file>` flag, e.g.:
 
 ```bash
-goradion-darwin-arm64 -s https://raw.githubusercontent.com/coderholic/pyradio/master/pyradio/stations.csv
+goradion -s https://raw.githubusercontent.com/coderholic/pyradio/master/pyradio/stations.csv
 ```
+
+## Tips
+
+For your own stations you can create a public Gist file and then run `goradion` with it's raw version, e.g.:
+
+```bash
+goradion -s https://gist.githubusercontent.com/agejevasv/58afa748a7bc14dcccab1ca237d14a0b/raw/stations.csv
+```
+
+Of course you can create this file locally if you prefer.
