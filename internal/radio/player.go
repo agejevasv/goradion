@@ -54,7 +54,7 @@ func (p *Player) Toggle(station, url string) {
 			if title == "" {
 				continue
 			}
-			p.OnAir <- fmt.Sprintf("%s | %s", station, title)
+			p.OnAir <- fmt.Sprintf("%s ⏵ %s", station, title)
 		}
 	}
 

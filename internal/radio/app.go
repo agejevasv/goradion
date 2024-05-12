@@ -9,9 +9,9 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	list := tview.NewList()
 	list.ShowSecondaryText(false)
 	list.SetBackgroundColor(tcell.ColorDefault)
-	list.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorRed).Background(tcell.ColorBlack))
-	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault))
-	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorGreen).Background(tcell.ColorDefault))
+	list.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorGreen))
+	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
+	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
 
 	for i := 0; i < len(stations); i++ {
 		list = list.AddItem(stations[i], urls[i], idxToRune(i), func() {
