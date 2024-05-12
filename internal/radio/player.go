@@ -3,9 +3,9 @@ package radio
 import (
 	"bufio"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
-	"syscall"
 )
 
 const (
@@ -30,7 +30,6 @@ func (p *Player) Toggle(station, url string) {
 	p.Stop()
 
 	if url == p.url {
-		p.OnAir <- stopped
 		p.url = ""
 		return
 	}
@@ -54,7 +53,7 @@ func (p *Player) Toggle(station, url string) {
 			if title == "" {
 				continue
 			}
-			p.OnAir <- fmt.Sprintf("%s ⏵ %s", station, title)
+			p.OnAir <- fmt.Sprintf("%s | %s", station, title)
 		}
 	}
 
@@ -62,8 +61,13 @@ func (p *Player) Toggle(station, url string) {
 }
 
 func (p *Player) Stop() {
+	defer func() { p.OnAir <- stopped }()
+
 	if p.cmd == nil {
 		return
 	}
-	p.cmd.Process.Signal(syscall.SIGTERM)
+
+	// ignore errors for now
+	p.cmd.Process.Signal(os.Kill)
+	p.cmd.Process.Wait()
 }

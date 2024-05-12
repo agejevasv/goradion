@@ -1,0 +1,56 @@
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: write-all
+
+name: Latest Release
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  releases-matrix:
+    name: Release Go Binary
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goosarch:
+          - 'darwin/amd64'
+          - 'darwin/arm64'
+          - 'linux/386'
+          - 'linux/amd64'
+          - 'linux/arm64'
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22.3'
+
+    - name: Get OS and arch info
+      run: |
+        GOOSARCH=${{matrix.goosarch}}
+        GOOS=${GOOSARCH%/*}
+        GOARCH=${GOOSARCH#*/}
+        BINARY_NAME=${{github.repository}}-$GOOS-$GOARCH
+        echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
+        echo "GOOS=$GOOS" >> $GITHUB_ENV
+        echo "GOARCH=$GOARCH" >> $GITHUB_ENV
+    - name: Build
+      run: |
+        go build -o "$BINARY_NAME" -v
+    - name: Release Notes
+      run:
+        git log $(git describe HEAD~ --tags --abbrev=0)..HEAD --pretty='format:* %h %s%n  * %an <%ae>' --no-merges >> ".github/RELEASE-TEMPLATE.md"
+    - name: Release with Notes
+      uses: softprops/action-gh-release@v1
+      with:
+        body_path: ".github/RELEASE-TEMPLATE.md"
+        draft: true
+        files: ${{env.BINARY_NAME}}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
