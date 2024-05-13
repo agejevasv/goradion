@@ -41,6 +41,10 @@ func NewPlayer() *Player {
 }
 
 func (p *Player) Start() {
+	if _, err := net.Dial("unix", socket); err == nil {
+		panic("goradion is already running in another terminal!")
+	}
+
 	p.cmd = exec.Command("mpv", "-no-video", "--idle", fmt.Sprintf("--input-ipc-server=%s", socket))
 
 	stdout, _ := p.cmd.StdoutPipe()
