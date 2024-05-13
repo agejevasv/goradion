@@ -1,6 +1,8 @@
 package radio
 
 import (
+	"fmt"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -21,19 +23,61 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 
 	status := tview.NewTextView()
 	status.SetBackgroundColor(tcell.ColorBlack)
-	status.SetTextColor(tcell.ColorWhite)
+	status.SetTextColor(tcell.ColorLightGray)
+	status.SetText("Ready")
+
+	song := tview.NewTextView()
+	song.SetBackgroundColor(tcell.ColorBlack)
+	song.SetTextColor(tcell.ColorGreen)
+	song.SetTextAlign(tview.AlignCenter)
+	song.SetText(VersionString())
+
+	volume := tview.NewTextView()
+	volume.SetBackgroundColor(tcell.ColorBlack)
+	volume.SetTextColor(tcell.ColorLightGray)
+	volume.SetTextAlign(tview.AlignRight)
+	volume.SetText(fmt.Sprintf("%d%%", player.status.Volume))
 
 	flex := tview.NewFlex().
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(list, 0, 100, true).
-			AddItem(status, 0, 1, false), 0, 1, true)
+			AddItem(tview.NewFlex().SetDirection(tview.FlexColumn).
+				AddItem(status, 0, 25, true).
+				AddItem(song, 0, 70, true).
+				AddItem(volume, 0, 5, false), 0, 1, true), 0, 1, true)
 
 	app := tview.NewApplication()
+
+	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+		switch key := event.Key(); key {
+		case tcell.KeyEscape:
+			app.Stop()
+		case tcell.KeyLeft:
+			player.VolumeDn()
+			return nil
+		case tcell.KeyRight:
+			player.VolumeUp()
+			return nil
+		case tcell.KeyRune:
+			switch event.Rune() {
+			case '=', '+':
+				player.VolumeUp()
+				return nil
+			case '-', '_':
+				player.VolumeDn()
+				return nil
+			}
+		}
+		return event
+	})
+
 	app.SetRoot(flex, true).EnableMouse(true)
 
 	go func() {
-		for {
-			status.SetText(<-player.OnAir)
+		for inf := range player.Info {
+			status.SetText(inf.Status)
+			song.SetText(inf.Song)
+			volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
 			app.Draw()
 		}
 	}()
