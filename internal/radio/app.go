@@ -24,13 +24,8 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	status := tview.NewTextView()
 	status.SetBackgroundColor(tcell.ColorBlack)
 	status.SetTextColor(tcell.ColorLightGray)
+	status.SetDynamicColors(true)
 	status.SetText("Ready")
-
-	song := tview.NewTextView()
-	song.SetBackgroundColor(tcell.ColorBlack)
-	song.SetTextColor(tcell.ColorGreen)
-	song.SetTextAlign(tview.AlignCenter)
-	song.SetText(VersionString())
 
 	volume := tview.NewTextView()
 	volume.SetBackgroundColor(tcell.ColorBlack)
@@ -42,8 +37,7 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(list, 0, 100, true).
 			AddItem(tview.NewFlex().SetDirection(tview.FlexColumn).
-				AddItem(status, 0, 25, true).
-				AddItem(song, 0, 70, true).
+				AddItem(status, 0, 100, true).
 				AddItem(volume, 0, 5, false), 0, 1, true), 0, 1, true)
 
 	app := tview.NewApplication()
@@ -75,8 +69,11 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 
 	go func() {
 		for inf := range player.Info {
-			status.SetText(inf.Status)
-			song.SetText(inf.Song)
+			if inf.Song == "" {
+				status.SetText(inf.Status)
+			} else {
+				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Status, inf.Song))
+			}
 			volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
 			app.Draw()
 		}

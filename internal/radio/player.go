@@ -78,6 +78,7 @@ func (p *Player) Toggle(station, url string) {
 	}
 
 	p.status.Status = station
+	p.status.Song = ""
 	p.status.Volume = p.volume
 	p.Info <- *p.status
 	p.Load(url)
