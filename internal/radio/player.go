@@ -31,10 +31,13 @@ type Status struct {
 }
 
 func NewPlayer() *Player {
-	if err := exec.Command("mpv", "-V").Start(); err != nil {
-		panic(fmt.Sprintf("%s\nPlease install mpv: https://mpv.io", err))
+	return &Player{
+		Info:   make(chan Status),
+		volume: 100,
+		status: &Status{
+			Volume: 100,
+		},
 	}
-	return &Player{Info: make(chan Status), volume: 100, status: &Status{Volume: 100}}
 }
 
 func (p *Player) Start() {
@@ -43,25 +46,25 @@ func (p *Player) Start() {
 	stdout, _ := p.cmd.StdoutPipe()
 
 	if err := p.cmd.Start(); err != nil {
-		panic(err)
+		panic(fmt.Sprintf("%s\nPlease install mpv: https://mpv.io", err))
 	}
 
-	scanner := bufio.NewScanner(stdout)
-	scanner.Split(bufio.ScanLines)
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		scanner.Split(bufio.ScanLines)
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "icy-title:") {
-			title := strings.Trim(strings.ReplaceAll(line, "icy-title:", ""), " ")
-			if title == "" {
-				continue
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.Contains(line, "icy-title:") {
+				title := strings.Trim(strings.ReplaceAll(line, "icy-title:", ""), " ")
+				if title == "" {
+					continue
+				}
+				p.status.Song = title
+				p.Info <- *p.status
 			}
-			p.status.Song = title
-			p.Info <- *p.status
 		}
-	}
-
-	p.cmd.Wait()
+	}()
 }
 
 func (p *Player) Toggle(station, url string) {
