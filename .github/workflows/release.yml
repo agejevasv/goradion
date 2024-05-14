@@ -23,6 +23,8 @@ jobs:
           - 'linux/386'
           - 'linux/amd64'
           - 'linux/arm64'
+          - 'windows/386'
+          - 'windows/amd64'
     steps:
     - uses: actions/checkout@v4
 
@@ -36,7 +38,8 @@ jobs:
         GOOSARCH=${{matrix.goosarch}}
         GOOS=${GOOSARCH%/*}
         GOARCH=${GOOSARCH#*/}
-        BINARY_NAME=${{github.repository}}-$GOOS-$GOARCH
+        EXT=$([ "$GOOS" = "windows" ] && echo ".exe" || echo "")
+        BINARY_NAME=${{github.repository}}-$GOOS-$GOARCH$EXT
         echo "BINARY_NAME=$BINARY_NAME" >> $GITHUB_ENV
         echo "GOOS=$GOOS" >> $GITHUB_ENV
         echo "GOARCH=$GOARCH" >> $GITHUB_ENV

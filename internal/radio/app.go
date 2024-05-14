@@ -48,7 +48,7 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	status.SetBackgroundColor(tcell.ColorBlack)
 	status.SetTextColor(tcell.ColorLightGray)
 	status.SetDynamicColors(true)
-	status.SetText(fmt.Sprintf("Ready [gray]| [green]Press ? for help"))
+	status.SetText("Ready [gray]| [green]Press ? for help")
 
 	volume := tview.NewTextView()
 	volume.SetBackgroundColor(tcell.ColorBlack)

@@ -2,11 +2,14 @@ module github.com/agejevasv/goradion
 
 go 1.22.3
 
-require github.com/rivo/tview v0.0.0-20240505185119-ed116790de0f
+require (
+	github.com/Microsoft/go-winio v0.6.2
+	github.com/gdamore/tcell/v2 v2.7.4
+	github.com/rivo/tview v0.0.0-20240505185119-ed116790de0f
+)
 
 require (
 	github.com/gdamore/encoding v1.0.0 // indirect
-	github.com/gdamore/tcell/v2 v2.7.4 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect

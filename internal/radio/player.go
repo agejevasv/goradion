@@ -3,17 +3,14 @@ package radio
 import (
 	"bufio"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 )
 
-const (
-	stopped = "Stopped"
-	socket  = "/tmp/grmpv.sock"
-)
+const defaultVolume = 80
 
 type Player struct {
 	Info   chan Status
@@ -33,25 +30,41 @@ type Status struct {
 func NewPlayer() *Player {
 	return &Player{
 		Info:   make(chan Status),
-		volume: 100,
+		volume: defaultVolume,
 		status: &Status{
-			Volume: 100,
+			Volume: defaultVolume,
 		},
 	}
 }
 
 func (p *Player) Start() {
-	if _, err := net.Dial("unix", socket); err == nil {
+	if p.mvpIsListening() {
 		panic("goradion is already running in another terminal!")
 	}
 
-	p.cmd = exec.Command("mpv", "-no-video", "--idle", fmt.Sprintf("--input-ipc-server=%s", socket))
+	p.cmd = exec.Command(
+		"mpv",
+		"-no-video",
+		"--idle",
+		fmt.Sprintf("--volume=%d", defaultVolume),
+		fmt.Sprintf("--input-ipc-server=%s", socket),
+	)
 
 	stdout, _ := p.cmd.StdoutPipe()
 
 	if err := p.cmd.Start(); err != nil {
 		panic(fmt.Sprintf("%s\nPlease install mpv: https://mpv.io", err))
 	}
+
+	for i := 1; p.mvpIsListening() == false && i <= 10; i++ {
+		if i == 10 {
+			panic("mpv failed to start")
+		}
+		log.Printf("waiting for mpv +%d ms\n", 8<<i)
+		time.Sleep((8 << i) * time.Millisecond)
+	}
+
+	log.Println("mpv is ready")
 
 	go func() {
 		scanner := bufio.NewScanner(stdout)
@@ -64,7 +77,9 @@ func (p *Player) Start() {
 				if title == "" {
 					continue
 				}
+				p.mutex.Lock()
 				p.status.Song = title
+				p.mutex.Unlock()
 				p.Info <- *p.status
 			}
 		}
@@ -72,10 +87,13 @@ func (p *Player) Start() {
 }
 
 func (p *Player) Toggle(station, url string) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	if url == p.url {
 		p.Stop()
 		p.url = ""
-		p.status.Status = stopped
+		p.status.Status = "Stopped"
 		p.status.Song = ""
 		p.Info <- *p.status
 		return
@@ -89,6 +107,9 @@ func (p *Player) Toggle(station, url string) {
 }
 
 func (p *Player) VolumeUp() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	defer func() {
 		p.status.Volume = p.volume
 		p.Info <- *p.status
@@ -98,16 +119,16 @@ func (p *Player) VolumeUp() {
 		return
 	}
 
+	log.Printf("setting volume %d\n", p.volume+5)
 	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.volume+5, "\n")
-
-	if p.writeToMPVSocket([]byte(cmd)) {
-		p.mutex.Lock()
-		p.volume += 5
-		p.mutex.Unlock()
-	}
+	p.writeToMPV([]byte(cmd))
+	p.volume += 5
 }
 
 func (p *Player) VolumeDn() {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+
 	defer func() {
 		p.status.Volume = p.volume
 		p.Info <- *p.status
@@ -117,56 +138,32 @@ func (p *Player) VolumeDn() {
 		return
 	}
 
+	log.Printf("setting volume %d\n", p.volume-5)
 	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.volume-5, "\n")
-
-	if p.writeToMPVSocket([]byte(cmd)) {
-		p.mutex.Lock()
-		p.volume -= 5
-		p.mutex.Unlock()
-	}
+	p.writeToMPV([]byte(cmd))
+	p.volume -= 5
 }
 
 func (p *Player) Stop() {
+	log.Printf("stopping %s\n", p.url)
 	cmd := fmt.Sprintf(`{"command": ["stop"]}%s`, "\n")
-	p.writeToMPVSocket([]byte(cmd))
+	p.writeToMPV([]byte(cmd))
 }
 
 func (p *Player) Load(url string) {
+	log.Printf("loading %s\n", url)
 	cmd := fmt.Sprintf(`{"command": ["loadfile", "%s"]}%s`, url, "\n")
-	if p.writeToMPVSocket([]byte(cmd)) {
-		p.mutex.Lock()
-		p.url = url
-		p.mutex.Unlock()
-	}
+	p.writeToMPV([]byte(cmd))
+	p.url = url
 }
 
 func (p *Player) Quit() {
-	if p.cmd == nil {
-		return
+	log.Println("quitting mpv")
+	cmd := fmt.Sprintf(`{"command": ["quit", 9]}%s`, "\n")
+
+	if ok := p.writeToMPV([]byte(cmd)); !ok && p.cmd != nil {
+		log.Println("mpv failed to quit via socket")
+		p.cmd.Process.Signal(os.Kill)
+		p.cmd.Wait()
 	}
-
-	// ignore errors for now
-	p.cmd.Process.Signal(os.Kill)
-	p.cmd.Process.Wait()
-}
-
-func (p *Player) writeToMPVSocket(data []byte) bool {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
-
-	c, err := net.Dial("unix", socket)
-
-	if err != nil {
-		log.Println(err, string(data))
-		return false
-	}
-
-	defer c.Close()
-
-	if _, err = c.Write(data); err != nil {
-		log.Println(err, string(data))
-		return false
-	}
-
-	return true
 }
