@@ -47,10 +47,13 @@ goradion -s /path/to/stations.csv
 Keyboard Control
 
    LEFT and RIGHT, - and +
-      Change volume in increments of 5.
+      Change the volume in increments of 5.
 
    UP and DOWN
-      Move up and down through the radio station list.
+      Move through the radio station list.
+
+   PAGE_UP and PAGE_DOWN
+      Jump to a beginning/end of a station list.
 
    ENTER/SPACE
       Start and stop playing currently selected station.
