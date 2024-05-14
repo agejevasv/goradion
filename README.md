@@ -46,18 +46,24 @@ goradion -s /path/to/stations.csv
 ```
 Keyboard Control
 
-   a-z, A-Z
-      Start and stop playing a station marked with a given letter.
+  a-z
+    Toggle playing a station marked with a given letter.
 
-   ENTER/SPACE
-      Start and stop playing currently selected station.
+  Enter and Space
+    Toggle playing currently selected station.
 
-   LEFT and RIGHT, - and +
-      Change the volume in increments of 5.
+  Left and Right, - and +
+    Change the volume in increments of 5.
 
-   UP and DOWN
-      Move through the radio station list.
+  Up and Down
+    Cycle through the radio station list.
 
-   PAGE_UP and PAGE_DOWN
-      Jump to a beginning/end of a station list.
+  PgUp and PgDown
+    Jump to a beginning/end of a station list.
+
+  Esc
+    Close current window.
+
+  ?
+    Toggle help.
 ```
