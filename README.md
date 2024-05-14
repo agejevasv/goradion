@@ -42,3 +42,20 @@ You can also create this file locally if you prefer:
 ```bash
 goradion -s /path/to/stations.csv
 ```
+## Keyboard Control
+```
+Keyboard Control
+
+   LEFT and RIGHT, - and +
+      Change volume in increments of 5.
+
+   UP and DOWN
+      Move up and down through the radio station list.
+
+   ENTER/SPACE
+      Start and stop playing currently selected station.
+
+   a-z, A-Z
+      Start and stop playing a station marked with a given letter.
+              
+```
