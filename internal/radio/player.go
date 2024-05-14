@@ -38,10 +38,6 @@ func NewPlayer() *Player {
 }
 
 func (p *Player) Start() {
-	if p.mvpIsListening() {
-		panic("goradion is already running in another terminal!")
-	}
-
 	p.cmd = exec.Command(
 		"mpv",
 		"-no-video",
@@ -56,7 +52,7 @@ func (p *Player) Start() {
 		panic(fmt.Sprintf("%s\nPlease install mpv: https://mpv.io", err))
 	}
 
-	for i := 1; p.mvpIsListening() == false && i <= 10; i++ {
+	for i := 1; !p.mvpIsListening() && i <= 10; i++ {
 		if i == 10 {
 			panic("mpv failed to start")
 		}

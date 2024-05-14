@@ -3,10 +3,12 @@
 package radio
 
 import (
+	"fmt"
 	"net"
+	"os"
 )
 
-const socket = "/tmp/grmpv.sock"
+var socket = fmt.Sprintf("/tmp/mpv%d.sock", os.Getpid())
 
 func (p *Player) writeToMPV(data []byte) bool {
 	c, err := net.Dial("unix", socket)

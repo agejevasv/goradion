@@ -3,10 +3,13 @@
 package radio
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/Microsoft/go-winio"
 )
 
-const socket = `\\.\pipe\grmpvsock`
+var socket = fmt.Sprintf(`\\.\pipe\mpv%dsock`, os.Getpid())
 
 func (p *Player) writeToMPV(data []byte) bool {
 	c, err := winio.DialPipe(socket, nil)
