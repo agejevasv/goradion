@@ -36,7 +36,7 @@ Goradion is a command line radio player based on `mpv`. Goradion is inspired by 
 goradion-<version>
 ```
 
-For your own stations you can create a public Gist file and pass it with `-s` flag, e.g.:
+For your own stations you can create a public [gist](https://gist.github.com/) file and pass it with `-s` flag, e.g.:
 
 ```bash
 goradion -s https://gist.githubusercontent.com/agejevasv/58afa748a7bc14dcccab1ca237d14a0b/raw/stations.csv
