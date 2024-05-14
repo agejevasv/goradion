@@ -7,6 +7,29 @@ import (
 	"github.com/rivo/tview"
 )
 
+const helpString = `Keyboard Control
+
+	[green]a[white]-[green]z[white]
+		Toggle playing a station marked with a given letter.
+
+	[green]Enter[white] and [green]Space[white]
+		Toggle playing currently selected station.
+
+	[green]Left[white] and [green]Right[white], [green]-[white] and [green]+[white]
+		Change the volume in increments of 5.
+
+	[green]Up[white] and [green]Down[white]
+		Cycle through the radio station list.
+
+	[green]PgUp[white] and [green]PgDown[white]
+		Jump to a beginning/end of a station list.
+
+	[green]Esc[white][white]
+		Close current window.
+
+	[green]?[white][white]
+		Toggle help.`
+
 func NewApp(player *Player, stations, urls []string) *tview.Application {
 	list := tview.NewList()
 	list.ShowSecondaryText(false)
@@ -25,13 +48,12 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	status.SetBackgroundColor(tcell.ColorBlack)
 	status.SetTextColor(tcell.ColorLightGray)
 	status.SetDynamicColors(true)
-	status.SetText(fmt.Sprintf("%s [gray]| [green]%s", "Ready", VersionString()))
+	status.SetText(fmt.Sprintf("Ready [gray]| [green]Press ? for help"))
 
 	volume := tview.NewTextView()
 	volume.SetBackgroundColor(tcell.ColorBlack)
 	volume.SetTextColor(tcell.ColorLightGray)
 	volume.SetTextAlign(tview.AlignRight)
-	volume.SetText(fmt.Sprintf("%d%%", player.status.Volume))
 
 	flex := tview.NewFlex().
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
@@ -40,11 +62,28 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 				AddItem(status, 0, 100, true).
 				AddItem(volume, 0, 5, false), 0, 1, true), 0, 1, true)
 
+	help := tview.NewTextView()
+	help.SetDynamicColors(true)
+	help.SetBackgroundColor(tcell.ColorDefault)
+	help.SetText(fmt.Sprintf("[green]%s\n\n[white]%s", VersionString(), helpString))
+
+	currentPage := "Main"
+	pages := tview.NewPages()
+	pages.AddPage("Main", flex, true, true)
+	pages.AddPage("Help", help, true, true)
+	pages.SwitchToPage(currentPage)
+
 	app := tview.NewApplication()
+	app.SetRoot(pages, true).EnableMouse(true)
 
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch key := event.Key(); key {
 		case tcell.KeyEscape:
+			if currentPage == "Help" {
+				pages.SwitchToPage("Main")
+				currentPage = "Main"
+				return nil
+			}
 			app.Stop()
 		case tcell.KeyLeft:
 			player.VolumeDn()
@@ -60,12 +99,19 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 			case '-', '_':
 				player.VolumeDn()
 				return nil
+			case '?':
+				if currentPage == "Help" {
+					pages.SwitchToPage("Main")
+					currentPage = "Main"
+				} else {
+					pages.SwitchToPage("Help")
+					currentPage = "Help"
+				}
+				return nil
 			}
 		}
 		return event
 	})
-
-	app.SetRoot(flex, true).EnableMouse(true)
 
 	go func() {
 		for inf := range player.Info {
