@@ -24,7 +24,7 @@ Goradion is a command line radio player based on `mpv`. Goradion is inspired by 
    # Other OSes:
    Install mpv using your package manager or refer to https://mpv.io/installation/
    ```
-3. [Download goradion](https://github.com/agejevasv/goradion/releases/latest)
+3. [Download goradion](https://github.com/agejevasv/goradion/releases/latest) (not needed on Windows)
 4. Mark it as executable:
    ```bash
    chmod +x goradion-<version>
