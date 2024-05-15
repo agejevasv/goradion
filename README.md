@@ -37,6 +37,7 @@ On Windows just double click the downloaded exe, on other OSes:
 goradion-<version>
 ```
 
+## Stations
 For your own stations you can create a public [gist](https://gist.github.com/) file and pass a link with a raw version of it with `-s` flag, e.g.:
 
 ```bash
