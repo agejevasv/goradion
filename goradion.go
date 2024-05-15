@@ -21,7 +21,7 @@ func main() {
 	stations, urls := radio.Stations(*cfg)
 
 	player := radio.NewPlayer()
-	player.Start()
+	go player.Start()
 	defer player.Quit()
 
 	if err := radio.NewApp(player, stations, urls).Run(); err != nil {

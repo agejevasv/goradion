@@ -38,6 +38,7 @@ func NewPlayer() *Player {
 }
 
 func (p *Player) Start() {
+	p.mutex.Lock()
 	p.cmd = exec.Command(
 		"mpv",
 		"-no-video",
@@ -60,6 +61,7 @@ func (p *Player) Start() {
 		time.Sleep((8 << i) * time.Millisecond)
 	}
 
+	p.mutex.Unlock()
 	log.Println("mpv is ready")
 
 	go func() {
