@@ -31,6 +31,7 @@ Goradion is a command line radio player based on `mpv`. Goradion is inspired by 
    ```
 
 ## Run
+On Windows just double click the downloaded exe, on other OSes:
 ```bash
 # Starts with preset radio stations
 goradion-<version>
