@@ -2,6 +2,7 @@ package radio
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -118,7 +119,7 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 			if inf.Song == "" {
 				status.SetText(inf.Status)
 			} else {
-				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Status, inf.Song))
+				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Status, stripBraces(inf.Song)))
 			}
 			volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
 			app.Draw()
@@ -126,6 +127,11 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	}()
 
 	return app
+}
+
+func stripBraces(s string) string {
+	s = strings.ReplaceAll(s, "[", "(")
+	return strings.ReplaceAll(s, "]", ")")
 }
 
 func idxToRune(i int) rune {

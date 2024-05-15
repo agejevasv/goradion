@@ -21,3 +21,7 @@
 go.work
 
 .DS_Store
+
+goradion
+goradion.log
+goradion.exe

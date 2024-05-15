@@ -9,9 +9,12 @@ import (
 )
 
 func main() {
-	cfg := flag.String("s", "", "link or path to a stations.csv file")
-	ver := flag.Bool("v", false, "Show version number and quit")
+	cfg := flag.String("s", "", "A link or a path to a stations.csv file")
+	ver := flag.Bool("v", false, "Show the version number and quit")
+	dbg := flag.Bool("d", false, "Enable debug log (file)")
 	flag.Parse()
+
+	radio.InitLog(*dbg)
 
 	if *ver {
 		fmt.Println(radio.VersionString())

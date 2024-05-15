@@ -2,11 +2,13 @@ package radio
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
+	"runtime"
 	"strings"
 )
 
@@ -56,7 +58,8 @@ func Stations(sta string) ([]string, []string) {
 	} else {
 		file, err := os.Open(sta)
 		if err != nil {
-			panic(err)
+			fmt.Println(err)
+			os.Exit(1)
 		}
 		defer file.Close()
 		scanner = bufio.NewScanner(file)
@@ -67,8 +70,8 @@ func Stations(sta string) ([]string, []string) {
 
 	for scanner.Scan() {
 		d := strings.Split(scanner.Text(), ",")
-		stat = append(stat, strings.Trim(d[0], " "))
-		urls = append(urls, strings.Trim(d[1], " "))
+		stat = append(stat, strings.Trim(d[0], " 	"))
+		urls = append(urls, strings.Trim(d[1], " 	"))
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -80,17 +83,27 @@ func Stations(sta string) ([]string, []string) {
 
 func cacheDefaultStations() {
 	s, err := fetchStations(defaultStationsURL)
+
 	if err != nil {
-		log.Panicln(err)
+		log.Println(err)
 		return
 	}
-	dir, _ := os.UserHomeDir()
-	ioutil.WriteFile(path.Join(dir, "goradion.csv"), []byte(s), 0644)
+
+	ioutil.WriteFile(cacheFileName(), []byte(s), 0644)
+}
+
+func cacheFileName() string {
+	dir := "/tmp"
+
+	if runtime.GOOS == "windows" {
+		dir, _ = os.UserHomeDir()
+	}
+
+	return path.Join(dir, "goradion.csv")
 }
 
 func cachedDefaultStations() ([]byte, error) {
-	dir, _ := os.UserHomeDir()
-	return ioutil.ReadFile(path.Join(dir, "goradion.csv"))
+	return ioutil.ReadFile(cacheFileName())
 }
 
 func fetchStations(url string) (string, error) {
