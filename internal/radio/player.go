@@ -1,10 +1,9 @@
 package radio
 
 import (
-	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"sync"
@@ -21,7 +20,11 @@ type Player struct {
 	url     string
 	volume  int
 	stopped chan struct{}
-	mpvConn net.Conn
+}
+
+type Control struct {
+	start chan bool
+	stop  chan bool
 }
 
 type Info struct {
@@ -66,13 +69,6 @@ func (p *Player) Start() {
 		time.Sleep((8 << i) * time.Millisecond)
 	}
 
-	var err error
-	p.mpvConn, err = netDial()
-	if err != nil {
-		log.Println("failed to connect to mpv: ", err)
-		panic(err)
-	}
-
 	p.Unlock()
 	log.Println("mpv is ready")
 }
@@ -101,7 +97,7 @@ func (p *Player) Toggle(station, url string) {
 	}
 
 	p.info.Status = station
-	p.info.Song = "Loading..."
+	p.info.Song = ""
 	p.info.Volume = p.volume
 	p.Info <- *p.info
 	p.Load(url)
@@ -156,6 +152,7 @@ func (p *Player) Stop() {
 }
 
 func (p *Player) Load(url string) {
+	p.SetSongTitle("", "Loading...")
 	log.Printf("loading %s\n", url)
 	cmd := fmt.Sprintf(`{"command": ["loadfile", "%s"]}%s`, url, "\n")
 	p.writeToMPV([]byte(cmd))
@@ -164,7 +161,6 @@ func (p *Player) Load(url string) {
 }
 
 func (p *Player) Quit() {
-	defer p.mpvConn.Close()
 	log.Println("quitting mpv")
 	cmd := fmt.Sprintf(`{"command": ["quit", 9]}%s`, "\n")
 
@@ -176,31 +172,28 @@ func (p *Player) Quit() {
 }
 
 func (p *Player) readMetadata() {
-	var rspJSON map[string]any
-	cmd := fmt.Sprintf(`{"command": ["get_property", "metadata"]}%s`, "\n")
-	ticker := time.NewTicker(1 * time.Second)
+	var res map[string]any
+
+	t := time.NewTicker(1 * time.Second)
 
 	for {
 		select {
-		case <-ticker.C:
-			if _, err := p.mpvConn.Write([]byte(cmd)); err != nil {
-				log.Println(err)
-				continue
-			}
+		case <-t.C:
+			cmd := fmt.Sprintf(`{"command": ["get_property", "metadata"]}%s`, "\n")
 
-			data, err := bufio.NewReader(p.mpvConn).ReadBytes([]byte("\n")[0])
+			data, err := p.readFromMPV([]byte(cmd))
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			if err = json.Unmarshal(data, &rspJSON); err != nil {
+			if err = json.Unmarshal(data, &res); err != nil {
 				log.Println(err)
 				continue
 			}
 
-			if rspJSON["data"] != nil {
-				meta := rspJSON["data"].(map[string]any)
+			if res["data"] != nil {
+				meta := res["data"].(map[string]any)
 
 				if t, ok := meta["icy-title"]; ok {
 					p.SetSongTitle("", t.(string))
@@ -220,7 +213,16 @@ func (p *Player) readMetadata() {
 }
 
 func (p *Player) writeToMPV(data []byte) bool {
-	if _, err := p.mpvConn.Write(data); err != nil {
+	c, err := netDial()
+
+	if err != nil {
+		log.Println(err, string(data))
+		return false
+	}
+
+	defer c.Close()
+
+	if _, err = c.Write(data); err != nil {
 		log.Println(err, string(data))
 		return false
 	}
@@ -231,4 +233,25 @@ func (p *Player) writeToMPV(data []byte) bool {
 func (p *Player) mvpIsListening() bool {
 	_, err := netDial()
 	return err == nil
+}
+
+func (p *Player) readFromMPV(data []byte) ([]byte, error) {
+	c, err := netDial()
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer c.Close()
+
+	if _, err = c.Write(data); err != nil {
+		return nil, err
+	}
+
+	res := make([]byte, 1024)
+	if _, err = c.Read(res); err != nil {
+		return nil, err
+	}
+
+	return bytes.Trim(res, "\x00"), nil
 }
