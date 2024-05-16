@@ -76,7 +76,6 @@ func (p *Player) Start() {
 func (p *Player) SetSongTitle(artist, title string) {
 	if artist != "" {
 		p.info.Song = fmt.Sprintf("%s - %s", artist, title)
-		artist, title = "", ""
 	} else {
 		p.info.Song = title
 	}
@@ -97,9 +96,10 @@ func (p *Player) Toggle(station, url string) {
 	}
 
 	p.info.Status = station
-	p.info.Song = ""
+	p.info.Song = "Loading..."
 	p.info.Volume = p.volume
 	p.Info <- *p.info
+
 	p.Load(url)
 }
 
@@ -152,7 +152,6 @@ func (p *Player) Stop() {
 }
 
 func (p *Player) Load(url string) {
-	p.SetSongTitle("", "Loading...")
 	log.Printf("loading %s\n", url)
 	cmd := fmt.Sprintf(`{"command": ["loadfile", "%s"]}%s`, url, "\n")
 	p.writeToMPV([]byte(cmd))
@@ -172,8 +171,24 @@ func (p *Player) Quit() {
 }
 
 func (p *Player) readMetadata() {
-	var res map[string]any
+	cancel := make(chan bool)
+	go func() {
+		<-time.After(5 * time.Second)
 
+		select {
+		case <-cancel:
+			return
+		default:
+			p.Lock()
+			defer p.Unlock()
+			if p.info.Song == "Loading..." {
+				p.info.Song = "Unknown"
+				p.Info <- *p.info
+			}
+		}
+	}()
+
+	var res map[string]any
 	t := time.NewTicker(1 * time.Second)
 
 	for {
@@ -195,17 +210,22 @@ func (p *Player) readMetadata() {
 			if res["data"] != nil {
 				meta := res["data"].(map[string]any)
 
-				if t, ok := meta["icy-title"]; ok {
+				log.Println(res["data"])
+
+				t, ok := meta["icy-title"]
+				a_, ok1 := meta["artist"]
+				t_, ok2 := meta["title"]
+
+				p.Lock()
+				if ok {
 					p.SetSongTitle("", t.(string))
-				} else {
-					a, ok1 := meta["artist"]
-					t, ok2 := meta["title"]
-					if ok1 && ok2 {
-						p.SetSongTitle(a.(string), t.(string))
-					}
+				} else if ok1 && ok2 {
+					p.SetSongTitle(a_.(string), t_.(string))
 				}
+				p.Unlock()
 			}
 		case <-p.stopped:
+			cancel <- true
 			return
 		}
 
