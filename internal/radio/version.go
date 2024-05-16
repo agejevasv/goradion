@@ -5,7 +5,7 @@ import (
 	"runtime"
 )
 
-const Version = "0.2.0"
+const Version = "0.2.2"
 
 func VersionString() string {
 	return fmt.Sprintf("goradion v%s (%s/%s)", Version, runtime.GOARCH, runtime.GOOS)
