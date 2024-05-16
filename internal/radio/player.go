@@ -50,6 +50,7 @@ func (p *Player) Start() {
 		"mpv",
 		"-no-video",
 		"--idle",
+		"--display-tags=Artist,Title,icy-title",
 		fmt.Sprintf("--volume=%d", defaultVolume),
 		fmt.Sprintf("--input-ipc-server=%s", socket),
 	)
@@ -60,7 +61,7 @@ func (p *Player) Start() {
 		os.Exit(1)
 	}
 
-	for i := 1; !p.mvpIsListening() && i <= 10; i++ {
+	for i := 1; !p.mpvIsListening() && i <= 10; i++ {
 		if i == 10 {
 			fmt.Println("mpv failed to start, quitting")
 			os.Exit(1)
@@ -171,7 +172,7 @@ func (p *Player) Quit() {
 }
 
 func (p *Player) readMetadata() {
-	cancel := make(chan bool)
+	cancel := make(chan struct{})
 	go func() {
 		<-time.After(5 * time.Second)
 
@@ -189,12 +190,12 @@ func (p *Player) readMetadata() {
 	}()
 
 	var res map[string]any
-	t := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(time.Duration(500) * time.Millisecond)
 
-	for {
+	for i := 10; ; {
 		select {
-		case <-t.C:
-			cmd := fmt.Sprintf(`{"command": ["get_property", "metadata"]}%s`, "\n")
+		case <-ticker.C:
+			cmd := fmt.Sprintf(`{"command": ["get_property", "filtered-metadata"]}%s`, "\n")
 
 			data, err := p.readFromMPV([]byte(cmd))
 			if err != nil {
@@ -213,8 +214,17 @@ func (p *Player) readMetadata() {
 				log.Println(res["data"])
 
 				t, ok := meta["icy-title"]
-				a_, ok1 := meta["artist"]
-				t_, ok2 := meta["title"]
+				a_, ok1 := meta["Artist"]
+				t_, ok2 := meta["Title"]
+
+				if ok || ok1 && ok2 {
+					i = -1
+					ticker.Stop()
+					ticker = time.NewTicker(time.Duration(3000) * time.Millisecond)
+				} else if i--; i == 0 {
+					ticker.Stop()
+					ticker = time.NewTicker(time.Duration(3000) * time.Millisecond)
+				}
 
 				p.Lock()
 				if ok {
@@ -225,10 +235,10 @@ func (p *Player) readMetadata() {
 				p.Unlock()
 			}
 		case <-p.stopped:
-			cancel <- true
+			cancel <- struct{}{}
+			ticker.Stop()
 			return
 		}
-
 	}
 }
 
@@ -250,7 +260,7 @@ func (p *Player) writeToMPV(data []byte) bool {
 	return true
 }
 
-func (p *Player) mvpIsListening() bool {
+func (p *Player) mpvIsListening() bool {
 	_, err := netDial()
 	return err == nil
 }
