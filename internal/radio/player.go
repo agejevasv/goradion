@@ -10,28 +10,32 @@ import (
 	"time"
 )
 
-const defaultVolume = 80
+const (
+	defaultVolume = 80
+	buffering     = "Buffering..."
+	stopped       = "Stopped"
+)
 
 type Player struct {
 	sync.Mutex
 	Info    chan Info
 	cmd     *exec.Cmd
 	info    *Info
-	url     string
-	volume  int
 	stopped chan struct{}
 }
 
 type Info struct {
-	Status string
-	Song   string
-	Volume int
+	Status   string
+	Station  string
+	Song     string
+	PrevSong string
+	Url      string
+	Volume   int
 }
 
 func NewPlayer() *Player {
 	return &Player{
-		Info:   make(chan Info),
-		volume: defaultVolume,
+		Info: make(chan Info),
 		info: &Info{
 			Volume: defaultVolume,
 		},
@@ -74,18 +78,19 @@ func (p *Player) Toggle(station, url string) {
 	p.Lock()
 	defer p.Unlock()
 
-	if p.url != "" {
+	if p.info.Url != "" {
 		p.Stop()
 
-		if url == p.url {
-			p.url = ""
+		if url == p.info.Url {
+			p.info.PrevSong = ""
+			p.info.Url = ""
 			return
 		}
 	}
 
-	p.info.Status = station
-	p.info.Song = "Loading..."
-	p.info.Volume = p.volume
+	p.info.Station = station
+	p.info.Status = buffering
+	p.info.Song = ""
 	p.Info <- *p.info
 
 	p.Load(url)
@@ -96,18 +101,17 @@ func (p *Player) VolumeUp() {
 	defer p.Unlock()
 
 	defer func() {
-		p.info.Volume = p.volume
 		p.Info <- *p.info
 	}()
 
-	if p.volume == 100 {
+	if p.info.Volume == 100 {
 		return
 	}
 
-	log.Printf("setting volume %d\n", p.volume+5)
-	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.volume+5, "\n")
+	log.Printf("setting volume %d\n", p.info.Volume+5)
+	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.info.Volume+5, "\n")
 	writeToMPV([]byte(cmd))
-	p.volume += 5
+	p.info.Volume += 5
 }
 
 func (p *Player) VolumeDn() {
@@ -115,25 +119,24 @@ func (p *Player) VolumeDn() {
 	defer p.Unlock()
 
 	defer func() {
-		p.info.Volume = p.volume
 		p.Info <- *p.info
 	}()
 
-	if p.volume == 0 {
+	if p.info.Volume == 0 {
 		return
 	}
 
-	log.Printf("setting volume %d\n", p.volume-5)
-	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.volume-5, "\n")
+	log.Printf("setting volume %d\n", p.info.Volume-5)
+	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.info.Volume, "\n")
 	writeToMPV([]byte(cmd))
-	p.volume -= 5
+	p.info.Volume -= 5
 }
 
 func (p *Player) Stop() {
-	log.Printf("stopping %s\n", p.url)
+	log.Printf("stopping %s\n", p.info.Url)
 	cmd := fmt.Sprintf(`{"command": ["stop"]}%s`, "\n")
 	writeToMPV([]byte(cmd))
-	p.info.Status = "Stopped"
+	p.info.Status = stopped
 	p.info.Song = ""
 	p.Info <- *p.info
 	p.stopped <- struct{}{}
@@ -143,7 +146,7 @@ func (p *Player) Load(url string) {
 	log.Printf("loading %s\n", url)
 	cmd := fmt.Sprintf(`{"command": ["loadfile", "%s"]}%s`, url, "\n")
 	writeToMPV([]byte(cmd))
-	p.url = url
+	p.info.Url = url
 	go p.observeMetadataChanges()
 }
 
@@ -161,9 +164,6 @@ func (p *Player) Quit() {
 func (p *Player) observeMetadataChanges() {
 	cancel := make(chan struct{})
 	go p.markSongAsUnknownAfterTimeout(cancel, time.After(5*time.Second))
-
-	// prevent metadata from prev stream
-	<-time.After(500 * time.Millisecond)
 
 	c, err := netDial()
 	if err != nil {
@@ -203,22 +203,27 @@ func (p *Player) setNewMetadata(m map[string]any) {
 
 	title, ok := m["icy-title"]
 
+	song := ""
+
 	if ok {
-		p.Lock()
-		p.info.Song = title.(string)
-		p.Info <- *p.info
-		p.Unlock()
-		return
+		song = title.(string)
 	}
 
 	artist, ok1 := m["Artist"]
 	title, ok2 := m["Title"]
 
 	if ok1 && ok2 {
-		p.Lock()
-		p.info.Song = fmt.Sprintf("%s - %s", artist.(string), title.(string))
+		song = fmt.Sprintf("%s - %s", artist.(string), title.(string))
+	}
+
+	p.Lock()
+	defer p.Unlock()
+
+	if song != "" && song != p.info.PrevSong {
+		p.info.PrevSong = song
+		p.info.Status = ""
+		p.info.Song = song
 		p.Info <- *p.info
-		p.Unlock()
 	}
 }
 
@@ -231,8 +236,10 @@ func (p *Player) markSongAsUnknownAfterTimeout(cancel chan struct{}, timeout <-c
 	default:
 		p.Lock()
 		defer p.Unlock()
-		if p.info.Song == "Loading..." {
-			p.info.Song = "Unknown"
+
+		if p.info.Status == buffering {
+			p.info.Status = ""
+			p.info.Song = "Uknown artist"
 			p.Info <- *p.info
 		}
 	}
