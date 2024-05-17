@@ -14,14 +14,14 @@ const (
 	defaultVolume = 80
 	buffering     = "Buffering..."
 	stopped       = "Stopped"
+	playing       = "Playing"
 )
 
 type Player struct {
 	sync.Mutex
-	Info    chan Info
-	cmd     *exec.Cmd
-	info    *Info
-	stopped chan struct{}
+	Info chan Info
+	cmd  *exec.Cmd
+	info *Info
 }
 
 type Info struct {
@@ -39,7 +39,6 @@ func NewPlayer() *Player {
 		info: &Info{
 			Volume: defaultVolume,
 		},
-		stopped: make(chan struct{}),
 	}
 }
 
@@ -69,31 +68,9 @@ func (p *Player) Start() {
 		log.Printf("waiting for mpv +%d ms\n", 8<<i)
 		time.Sleep((8 << i) * time.Millisecond)
 	}
-
 	p.Unlock()
-	log.Println("mpv is ready")
-}
 
-func (p *Player) Toggle(station, url string) {
-	p.Lock()
-	defer p.Unlock()
-
-	if p.info.Url != "" {
-		p.Stop()
-
-		if url == p.info.Url {
-			p.info.PrevSong = ""
-			p.info.Url = ""
-			return
-		}
-	}
-
-	p.info.Station = station
-	p.info.Status = buffering
-	p.info.Song = ""
-	p.Info <- *p.info
-
-	p.Load(url)
+	go p.readMPVEvents()
 }
 
 func (p *Player) VolumeUp() {
@@ -132,6 +109,28 @@ func (p *Player) VolumeDn() {
 	p.info.Volume -= 5
 }
 
+func (p *Player) Toggle(station, url string) {
+	p.Lock()
+	defer p.Unlock()
+
+	if p.info.Url != "" {
+		p.Stop()
+
+		if url == p.info.Url {
+			p.info.PrevSong = ""
+			p.info.Url = ""
+			return
+		}
+	}
+
+	p.info.Station = station
+	p.info.Status = buffering
+	p.info.Song = ""
+	p.Info <- *p.info
+
+	p.Load(url)
+}
+
 func (p *Player) Stop() {
 	log.Printf("stopping %s\n", p.info.Url)
 	cmd := fmt.Sprintf(`{"command": ["stop"]}%s`, "\n")
@@ -139,7 +138,6 @@ func (p *Player) Stop() {
 	p.info.Status = stopped
 	p.info.Song = ""
 	p.Info <- *p.info
-	p.stopped <- struct{}{}
 }
 
 func (p *Player) Load(url string) {
@@ -147,7 +145,6 @@ func (p *Player) Load(url string) {
 	cmd := fmt.Sprintf(`{"command": ["loadfile", "%s"]}%s`, url, "\n")
 	writeToMPV([]byte(cmd))
 	p.info.Url = url
-	go p.observeMetadataChanges()
 }
 
 func (p *Player) Quit() {
@@ -161,10 +158,7 @@ func (p *Player) Quit() {
 	}
 }
 
-func (p *Player) observeMetadataChanges() {
-	cancel := make(chan struct{})
-	go p.markSongAsUnknownAfterTimeout(cancel, time.After(5*time.Second))
-
+func (p *Player) readMPVEvents() {
 	c, err := netDial()
 	if err != nil {
 		log.Println(err)
@@ -179,26 +173,47 @@ func (p *Player) observeMetadataChanges() {
 	}
 
 	for {
-		select {
-		default:
-			eventBytes, err := bufio.NewReader(c).ReadBytes([]byte("\n")[0])
+		eventBytes, err := bufio.NewReader(c).ReadBytes([]byte("\n")[0])
 
-			if err != nil {
-				log.Println(err)
-				continue
-			}
+		if err != nil {
+			log.Println(err)
+			continue
+		}
 
-			if data := unmarshal(eventBytes)["data"]; data != nil {
-				p.setNewMetadata(data.(map[string]any))
-			}
-		case <-p.stopped:
-			cancel <- struct{}{}
-			return
+		r := unmarshal(eventBytes)
+		log.Println(r)
+
+		if r["event"] != nil && r["event"].(string) == "playback-restart" && p.info.Status == buffering {
+			p.setStatusPlaying()
+		}
+
+		if r["reason"] != nil && (r["reason"].(string) == "eof" || r["reason"].(string) == "error") {
+			p.setStatusUnexpectedEndFile(r["reason"].(string))
+		}
+
+		if data := r["data"]; data != nil {
+			p.setCurrentSong(data.(map[string]any))
 		}
 	}
 }
 
-func (p *Player) setNewMetadata(m map[string]any) {
+func (p *Player) setStatusPlaying() {
+	p.Lock()
+	p.info.Status = playing
+	p.info.Song = ""
+	p.Info <- *p.info
+	p.Unlock()
+}
+
+func (p *Player) setStatusUnexpectedEndFile(reason string) {
+	p.Lock()
+	p.info.Status = fmt.Sprintf("Network or stream issues: %s", reason)
+	p.info.Song = ""
+	p.Info <- *p.info
+	p.Unlock()
+}
+
+func (p *Player) setCurrentSong(m map[string]any) {
 	log.Println(m)
 
 	title, ok := m["icy-title"]
@@ -224,24 +239,6 @@ func (p *Player) setNewMetadata(m map[string]any) {
 		p.info.Status = ""
 		p.info.Song = song
 		p.Info <- *p.info
-	}
-}
-
-func (p *Player) markSongAsUnknownAfterTimeout(cancel chan struct{}, timeout <-chan time.Time) {
-	<-timeout
-
-	select {
-	case <-cancel:
-		return
-	default:
-		p.Lock()
-		defer p.Unlock()
-
-		if p.info.Status == buffering {
-			p.info.Status = ""
-			p.info.Song = "Uknown artist"
-			p.Info <- *p.info
-		}
 	}
 }
 

@@ -70,6 +70,10 @@ func Stations(sta string) ([]string, []string) {
 
 	for scanner.Scan() {
 		d := strings.Split(scanner.Text(), ",")
+		if len(d) != 2 {
+			log.Println("Wrong stations entry:", scanner.Text())
+			continue
+		}
 		stat = append(stat, strings.Trim(d[0], " 	"))
 		urls = append(urls, strings.Trim(d[1], " 	"))
 	}

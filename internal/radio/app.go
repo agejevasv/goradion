@@ -116,7 +116,9 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 
 	go func() {
 		for inf := range player.Info {
-			if inf.Song == "" {
+			if inf.Song == "" && inf.Status == "" {
+				status.SetText(inf.Station)
+			} else if inf.Song == "" {
 				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, inf.Status))
 			} else {
 				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, stripBraces(inf.Song)))
