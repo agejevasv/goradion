@@ -1,7 +1,7 @@
 package radio
 
 import (
-	"bytes"
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -20,11 +20,6 @@ type Player struct {
 	url     string
 	volume  int
 	stopped chan struct{}
-}
-
-type Control struct {
-	start chan bool
-	stop  chan bool
 }
 
 type Info struct {
@@ -56,12 +51,13 @@ func (p *Player) Start() {
 	)
 
 	if err := p.cmd.Start(); err != nil {
-		fmt.Println("'mpv' was not found in $PATH")
-		fmt.Println("Please install 'mpv' using your package manager or visit https://mpv.io for more info.")
+		fmt.Println(err)
+		fmt.Println("Please make sure 'mpv' is available.")
+		fmt.Println("Install it using your package manager or visit https://mpv.io for more info.")
 		os.Exit(1)
 	}
 
-	for i := 1; !p.mpvIsListening() && i <= 10; i++ {
+	for i := 1; !mpvIsListening() && i <= 10; i++ {
 		if i == 10 {
 			fmt.Println("mpv failed to start, quitting")
 			os.Exit(1)
@@ -72,15 +68,6 @@ func (p *Player) Start() {
 
 	p.Unlock()
 	log.Println("mpv is ready")
-}
-
-func (p *Player) SetSongTitle(artist, title string) {
-	if artist != "" {
-		p.info.Song = fmt.Sprintf("%s - %s", artist, title)
-	} else {
-		p.info.Song = title
-	}
-	p.Info <- *p.info
 }
 
 func (p *Player) Toggle(station, url string) {
@@ -119,7 +106,7 @@ func (p *Player) VolumeUp() {
 
 	log.Printf("setting volume %d\n", p.volume+5)
 	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.volume+5, "\n")
-	p.writeToMPV([]byte(cmd))
+	writeToMPV([]byte(cmd))
 	p.volume += 5
 }
 
@@ -138,14 +125,14 @@ func (p *Player) VolumeDn() {
 
 	log.Printf("setting volume %d\n", p.volume-5)
 	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.volume-5, "\n")
-	p.writeToMPV([]byte(cmd))
+	writeToMPV([]byte(cmd))
 	p.volume -= 5
 }
 
 func (p *Player) Stop() {
 	log.Printf("stopping %s\n", p.url)
 	cmd := fmt.Sprintf(`{"command": ["stop"]}%s`, "\n")
-	p.writeToMPV([]byte(cmd))
+	writeToMPV([]byte(cmd))
 	p.info.Status = "Stopped"
 	p.info.Song = ""
 	p.Info <- *p.info
@@ -155,94 +142,103 @@ func (p *Player) Stop() {
 func (p *Player) Load(url string) {
 	log.Printf("loading %s\n", url)
 	cmd := fmt.Sprintf(`{"command": ["loadfile", "%s"]}%s`, url, "\n")
-	p.writeToMPV([]byte(cmd))
+	writeToMPV([]byte(cmd))
 	p.url = url
-	go p.readMetadata()
+	go p.observeMetadataChanges()
 }
 
 func (p *Player) Quit() {
 	log.Println("quitting mpv")
 	cmd := fmt.Sprintf(`{"command": ["quit", 9]}%s`, "\n")
 
-	if ok := p.writeToMPV([]byte(cmd)); !ok && p.cmd != nil {
+	if ok := writeToMPV([]byte(cmd)); !ok && p.cmd != nil {
 		log.Println("mpv failed to quit via socket")
 		p.cmd.Process.Signal(os.Kill)
 		p.cmd.Wait()
 	}
 }
 
-func (p *Player) readMetadata() {
+func (p *Player) observeMetadataChanges() {
 	cancel := make(chan struct{})
-	go func() {
-		<-time.After(5 * time.Second)
+	go p.markSongAsUnknownAfterTimeout(cancel, time.After(5*time.Second))
 
+	// prevent metadata from prev stream
+	<-time.After(500 * time.Millisecond)
+
+	c, err := netDial()
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	defer c.Close()
+
+	cmd := fmt.Sprintf(`{"command": ["observe_property", 1, "filtered-metadata"]}%s`, "\n")
+
+	if _, err = c.Write([]byte(cmd)); err != nil {
+		log.Println(err)
+	}
+
+	for {
 		select {
-		case <-cancel:
-			return
 		default:
-			p.Lock()
-			defer p.Unlock()
-			if p.info.Song == "Loading..." {
-				p.info.Song = "Unknown"
-				p.Info <- *p.info
-			}
-		}
-	}()
+			eventBytes, err := bufio.NewReader(c).ReadBytes([]byte("\n")[0])
 
-	var res map[string]any
-	ticker := time.NewTicker(time.Duration(500) * time.Millisecond)
-
-	for i := 10; ; {
-		select {
-		case <-ticker.C:
-			cmd := fmt.Sprintf(`{"command": ["get_property", "filtered-metadata"]}%s`, "\n")
-
-			data, err := p.readFromMPV([]byte(cmd))
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			if err = json.Unmarshal(data, &res); err != nil {
-				log.Println(err)
-				continue
-			}
-
-			if res["data"] != nil {
-				meta := res["data"].(map[string]any)
-
-				log.Println(res["data"])
-
-				t, ok := meta["icy-title"]
-				a_, ok1 := meta["Artist"]
-				t_, ok2 := meta["Title"]
-
-				if ok || ok1 && ok2 {
-					i = -1
-					ticker.Stop()
-					ticker = time.NewTicker(time.Duration(3000) * time.Millisecond)
-				} else if i--; i == 0 {
-					ticker.Stop()
-					ticker = time.NewTicker(time.Duration(3000) * time.Millisecond)
-				}
-
-				p.Lock()
-				if ok {
-					p.SetSongTitle("", t.(string))
-				} else if ok1 && ok2 {
-					p.SetSongTitle(a_.(string), t_.(string))
-				}
-				p.Unlock()
+			if data := unmarshal(eventBytes)["data"]; data != nil {
+				p.setNewMetadata(data.(map[string]any))
 			}
 		case <-p.stopped:
 			cancel <- struct{}{}
-			ticker.Stop()
 			return
 		}
 	}
 }
 
-func (p *Player) writeToMPV(data []byte) bool {
+func (p *Player) setNewMetadata(m map[string]any) {
+	log.Println(m)
+
+	title, ok := m["icy-title"]
+
+	if ok {
+		p.Lock()
+		p.info.Song = title.(string)
+		p.Info <- *p.info
+		p.Unlock()
+		return
+	}
+
+	artist, ok1 := m["Artist"]
+	title, ok2 := m["Title"]
+
+	if ok1 && ok2 {
+		p.Lock()
+		p.info.Song = fmt.Sprintf("%s - %s", artist.(string), title.(string))
+		p.Info <- *p.info
+		p.Unlock()
+	}
+}
+
+func (p *Player) markSongAsUnknownAfterTimeout(cancel chan struct{}, timeout <-chan time.Time) {
+	<-timeout
+
+	select {
+	case <-cancel:
+		return
+	default:
+		p.Lock()
+		defer p.Unlock()
+		if p.info.Song == "Loading..." {
+			p.info.Song = "Unknown"
+			p.Info <- *p.info
+		}
+	}
+}
+
+func writeToMPV(data []byte) bool {
 	c, err := netDial()
 
 	if err != nil {
@@ -260,28 +256,17 @@ func (p *Player) writeToMPV(data []byte) bool {
 	return true
 }
 
-func (p *Player) mpvIsListening() bool {
+func mpvIsListening() bool {
 	_, err := netDial()
 	return err == nil
 }
 
-func (p *Player) readFromMPV(data []byte) ([]byte, error) {
-	c, err := netDial()
+func unmarshal(data []byte) map[string]any {
+	res := make(map[string]any)
 
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(data, &res); err != nil {
+		log.Println(err)
 	}
 
-	defer c.Close()
-
-	if _, err = c.Write(data); err != nil {
-		return nil, err
-	}
-
-	res := make([]byte, 1024)
-	if _, err = c.Read(res); err != nil {
-		return nil, err
-	}
-
-	return bytes.Trim(res, "\x00"), nil
+	return res
 }
