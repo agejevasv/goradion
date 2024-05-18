@@ -10,25 +10,25 @@ import (
 
 const helpString = `Keyboard Control
 
-	[green]a[white]-[green]z[white]
+	[green]a[default]-[green]z[default]
 		Toggle playing a station marked with a given letter.
 
-	[green]Enter[white] and [green]Space[white]
+	[green]Enter[default] and [green]Space[default]
 		Toggle playing currently selected station.
 
-	[green]Left[white] and [green]Right[white], [green]-[white] and [green]+[white]
+	[green]Left[default] and [green]Right[default], [green]-[default] and [green]+[default]
 		Change the volume in increments of 5.
 
-	[green]Up[white] and [green]Down[white]
+	[green]Up[default] and [green]Down[default]
 		Cycle through the radio station list.
 
-	[green]PgUp[white] and [green]PgDown[white]
+	[green]PgUp[default] and [green]PgDown[default]
 		Jump to a beginning/end of a station list.
 
-	[green]Esc[white][white]
+	[green]Esc[default]
 		Close current window.
 
-	[green]?[white][white]
+	[green]?[default]
 		Toggle help.`
 
 func NewApp(player *Player, stations, urls []string) *tview.Application {
@@ -36,8 +36,8 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	list.ShowSecondaryText(false)
 	list.SetBackgroundColor(tcell.ColorDefault)
 	list.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorGreen))
-	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
-	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorWhite).Background(tcell.ColorDefault))
+	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
+	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
 
 	for i := 0; i < len(stations); i++ {
 		list = list.AddItem(stations[i], urls[i], idxToRune(i), func() {
@@ -46,27 +46,27 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	}
 
 	status := tview.NewTextView()
-	status.SetBackgroundColor(tcell.ColorBlack)
 	status.SetTextColor(tcell.ColorLightGray)
 	status.SetDynamicColors(true)
 	status.SetText("Ready [gray]| [green]Press ? for help")
 
 	volume := tview.NewTextView()
-	volume.SetBackgroundColor(tcell.ColorBlack)
 	volume.SetTextColor(tcell.ColorLightGray)
 	volume.SetTextAlign(tview.AlignRight)
+
+	statusFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
+		AddItem(status, 0, 100, true).
+		AddItem(volume, 0, 5, false)
 
 	flex := tview.NewFlex().
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(list, 0, 100, true).
-			AddItem(tview.NewFlex().SetDirection(tview.FlexColumn).
-				AddItem(status, 0, 100, true).
-				AddItem(volume, 0, 5, false), 0, 1, true), 0, 1, true)
+			AddItem(statusFlex, 0, 1, true), 0, 1, true)
 
 	help := tview.NewTextView()
 	help.SetDynamicColors(true)
 	help.SetBackgroundColor(tcell.ColorDefault)
-	help.SetText(fmt.Sprintf("[green]%s\n\n[white]%s", VersionString(), helpString))
+	help.SetText(fmt.Sprintf("[green]%s\n\n[default]%s", VersionString(), helpString))
 
 	currentPage := "Main"
 	pages := tview.NewPages()
