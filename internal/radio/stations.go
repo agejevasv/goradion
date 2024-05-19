@@ -38,7 +38,6 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Jazz Groove,https://audio-edge-cmc51.fra.h.radiomast.io/f0ac4bf3-bbe5-4edb-b828-193e0fdc4f2f
 	KCSM Jazz Tonight,https://ice7.securenetsystems.net/KCSM2
 	Jazz24,https://prod-52-201-196-36.amperwave.net/ppm-jazz24aac256-ibc1
-	Kiss FM: Oldschool Hip Hop,https://topradio-stream31.radiohost.de/kissfm-hiphop_mp3-128
 	Classic Rock Florida,https://vip2.fastcast4u.com/proxy/classicrockdoug?mp=/1`
 
 func Stations(sta string) ([]string, []string) {

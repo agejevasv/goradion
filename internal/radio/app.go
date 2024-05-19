@@ -90,6 +90,12 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	app := tview.NewApplication()
 	app.SetRoot(pages, true)
 
+	mc := func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
+		// do nothing, please
+		return nil, action
+	}
+	app.EnableMouse(true).SetMouseCapture(mc)
+
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch key := event.Key(); key {
 		case tcell.KeyEscape:
