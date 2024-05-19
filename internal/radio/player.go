@@ -149,6 +149,9 @@ func (p *Player) Toggle(station, url string) {
 }
 
 func (p *Player) Stop() {
+	if p.retry.cancel != nil {
+		p.retry.cancel()
+	}
 	log.Printf("stopping %s\n", p.info.Url)
 	cmd := fmt.Sprintf(`{"command": ["stop"]}%s`, "\n")
 	writeToMPV([]byte(cmd))
@@ -158,6 +161,10 @@ func (p *Player) Stop() {
 }
 
 func (p *Player) Load(url string) {
+	if url == "" {
+		p.Stop()
+		return
+	}
 	log.Printf("loading %s\n", url)
 	cmd := fmt.Sprintf(`{"command": ["loadfile", "%s"]}%s`, url, "\n")
 	writeToMPV([]byte(cmd))
@@ -213,7 +220,7 @@ func (p *Player) readMPVEvents() {
 			go func() {
 				select {
 				case <-p.retry.ctx.Done():
-					log.Println("Retry stream loading is cancelled")
+					log.Println("Retry loading is cancelled")
 					return
 				case <-time.After((1 << p.retry.count) * time.Second):
 					p.retry.count++

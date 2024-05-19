@@ -37,7 +37,8 @@ const defaultStationsCSV = `Jazz Groove,https://audio-edge-cmc51.fra.h.radiomast
 	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls
 	SomaFM: Drone Zone,http://somafm.com/dronezone.pls
 	SomaFM: Deep Space One,https://somafm.com/deepspaceone130.pls
-	Big FM,https://stream.bigfm.de/oldschoolrap/aac-128/radiode`
+	Big FM: Oldschool Rap,https://stream.bigfm.de/oldschoolrap/aac-128/radiode
+	Kiss FM: Oldschool Hip Hop,https://topradio-stream31.radiohost.de/kissfm-hiphop_mp3-128`
 
 func Stations(sta string) ([]string, []string) {
 	var scanner *bufio.Scanner
