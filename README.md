@@ -53,6 +53,9 @@ goradion -s /path/to/stations.csv
 ```
 Keyboard Control
 
+  *
+    Toggle playing a random station.
+
   a-z
     Toggle playing a station marked with a given letter.
 

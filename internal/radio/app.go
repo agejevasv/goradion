@@ -2,6 +2,7 @@ package radio
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -9,6 +10,9 @@ import (
 )
 
 const helpString = `Keyboard Control
+
+	[green]*[default]
+		Toggle playing a random station.
 
 	[green]a[default]-[green]z[default]
 		Toggle playing a station marked with a given letter.
@@ -39,8 +43,17 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
 	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
 
+	list.AddItem("Random", "", rune('*'), func() {
+		r := rand.Intn(len(stations))
+		for list.GetCurrentItem() == r+1 {
+			r = rand.Intn(len(stations))
+		}
+		list.SetCurrentItem(r + 1)
+		go player.Toggle(stations[r], urls[r])
+	})
+
 	for i := 0; i < len(stations); i++ {
-		list = list.AddItem(stations[i], urls[i], idxToRune(i), func() {
+		list = list.AddItem(stations[i], "", idxToRune(i), func() {
 			go player.Toggle(stations[i], urls[i])
 		})
 	}
@@ -75,7 +88,7 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	pages.SwitchToPage(currentPage)
 
 	app := tview.NewApplication()
-	app.SetRoot(pages, true).EnableMouse(true)
+	app.SetRoot(pages, true)
 
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch key := event.Key(); key {
