@@ -2,6 +2,7 @@ package radio
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -19,9 +20,10 @@ const (
 
 type Player struct {
 	sync.Mutex
-	Info chan Info
-	cmd  *exec.Cmd
-	info *Info
+	Info  chan Info
+	cmd   *exec.Cmd
+	info  *Info
+	retry *Retry
 }
 
 type Info struct {
@@ -33,9 +35,16 @@ type Info struct {
 	Volume   int
 }
 
+type Retry struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	count  uint64
+}
+
 func NewPlayer() *Player {
 	return &Player{
-		Info: make(chan Info),
+		retry: new(Retry),
+		Info:  make(chan Info),
 		info: &Info{
 			Volume: defaultVolume,
 		},
@@ -49,6 +58,7 @@ func (p *Player) Start() {
 		"-no-video",
 		"--idle",
 		"--display-tags=Artist,Title,icy-title",
+		"--network-timeout=10",
 		fmt.Sprintf("--volume=%d", defaultVolume),
 		fmt.Sprintf("--input-ipc-server=%s", socket),
 	)
@@ -123,6 +133,13 @@ func (p *Player) Toggle(station, url string) {
 		}
 	}
 
+	if p.retry.cancel != nil {
+		p.retry.cancel()
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	p.retry = &Retry{ctx: ctx, cancel: cancel}
+
 	p.info.Station = station
 	p.info.Status = buffering
 	p.info.Song = ""
@@ -180,19 +197,33 @@ func (p *Player) readMPVEvents() {
 			continue
 		}
 
-		r := unmarshal(eventBytes)
-		log.Println(r)
+		rsp := unmarshal(eventBytes)
+		log.Println(rsp)
 
-		if r["event"] != nil && r["event"].(string) == "playback-restart" && p.info.Status == buffering {
+		if data := rsp["data"]; data != nil {
+			p.setCurrentSong(data.(map[string]any))
+			continue
+		}
+
+		if eventIs(rsp, "playback-restart") && p.info.Status == buffering {
 			p.setStatusPlaying()
 		}
 
-		if r["reason"] != nil && (r["reason"].(string) == "eof" || r["reason"].(string) == "error") {
-			p.setStatusUnexpectedEndFile(r["reason"].(string))
-		}
-
-		if data := r["data"]; data != nil {
-			p.setCurrentSong(data.(map[string]any))
+		if eventIs(rsp, "end-file") && reasonIsAnyOf(rsp, "eof", "error", "unknown") {
+			go func() {
+				select {
+				case <-p.retry.ctx.Done():
+					log.Println("Retry stream loading is cancelled")
+					return
+				case <-time.After((1 << p.retry.count) * time.Second):
+					p.retry.count++
+					p.info.PrevSong = ""
+					p.info.Status = buffering
+					p.Info <- *p.info
+					p.Load(p.info.Url)
+				}
+			}()
+			p.setStatusUnexpectedEndFile(rsp["reason"].(string))
 		}
 	}
 }
@@ -214,8 +245,6 @@ func (p *Player) setStatusUnexpectedEndFile(reason string) {
 }
 
 func (p *Player) setCurrentSong(m map[string]any) {
-	log.Println(m)
-
 	title, ok := m["icy-title"]
 
 	song := ""
@@ -273,4 +302,22 @@ func unmarshal(data []byte) map[string]any {
 	}
 
 	return res
+}
+
+func reasonIsAnyOf(m map[string]any, needle ...string) bool {
+	if m["reason"] == nil {
+		return false
+	}
+
+	for _, n := range needle {
+		if m["reason"].(string) == n {
+			return true
+		}
+	}
+
+	return false
+}
+
+func eventIs(m map[string]any, needle string) bool {
+	return m["event"] != nil && m["event"].(string) == needle
 }
