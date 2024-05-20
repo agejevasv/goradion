@@ -1,34 +1,35 @@
 # goradion
 Goradion is a command line radio player based on `mpv`. Goradion is inspired by [pyradio](https://github.com/coderholic/pyradio) and supports it's stations playlists.
-
-<img width="725" alt="goradion" src="https://github.com/agejevasv/goradion/assets/1682086/4d0aa823-8662-42f8-a6ad-c601486fcf6d">
+<p align="center">
+  <img width="785" alt="goradion" src="https://github.com/agejevasv/goradion/assets/1682086/325f05bc-8f04-4810-ba71-400072794afb">
+</p>
 
 ## Setup
 
 1. Prerequisites: [mpv](https://mpv.io/)
-   ```bash
-   # Mac
-   brew install mpv
+```bash
+# Mac
+brew install mpv
 
-   # Ubuntu
-   apt install mpv
+# Ubuntu
+apt install mpv
 
-   # Arch
-   pacman -S mpv
+# Arch
+pacman -S mpv
 
-   # Windows
-   Download: https://sourceforge.net/projects/mpv-player-windows/files/latest/download
-   Unpack e.g. into c:\mpv
-   Add this dir to the PATH, either via GUI or: `setx /M PATH "%PATH%;c:\mpv"`
+# Windows
+Download: https://sourceforge.net/projects/mpv-player-windows/files/latest/download
+Unpack e.g. into c:\mpv
+Add this dir to the PATH, either via GUI or: `setx /M PATH "%PATH%;c:\mpv"`
 
-   # Other OSes:
-   Install mpv using your package manager or refer to https://mpv.io/installation/
-   ```
-3. [Download goradion](https://github.com/agejevasv/goradion/releases/latest)
-4. Mark it as executable (not needed on Windows):
-   ```bash
-   chmod +x goradion-<version>
-   ```
+# Other OSes:
+Install mpv using your package manager or refer to https://mpv.io/installation/
+```
+2. [Download goradion](https://github.com/agejevasv/goradion/releases/latest)
+3. Mark it as executable (not needed on Windows):
+```bash
+chmod +x goradion-<version>
+```
 
 ## Run
 On Windows just double click the downloaded exe, on other OSes:
