@@ -6,7 +6,7 @@ Goradion is a command line radio player based on `mpv`. Goradion is inspired by 
 
 ## Setup
 
-**Warning**: _On some Windows machines, a virus scanner identifies the binary as infected (https://go.dev/doc/faq#virus), in this case it's best to build the binary yourself: `go build .`._
+**Warning**: _[On some Windows machines](https://github.com/agejevasv/goradion/issues/1), a virus scanner identifies the binary as infected (https://go.dev/doc/faq#virus), in this case it's best to build the binary yourself: `go build .`._
 
 1. Prerequisites: [mpv](https://mpv.io/)
 ```bash
