@@ -18,9 +18,6 @@ brew install mpv
 # Ubuntu
 apt install mpv
 
-# Arch
-pacman -S mpv
-
 # Windows
 Download: https://sourceforge.net/projects/mpv-player-windows/files/latest/download
 Unpack e.g. into c:\mpv
