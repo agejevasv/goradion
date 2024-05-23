@@ -1,7 +1,7 @@
 # goradion
 Goradion is a command line radio player based on `mpv`. Goradion is inspired by [pyradio](https://github.com/coderholic/pyradio) and supports it's stations playlists.
 <p align="center">
-  <img width="873" alt="goradion" src="https://github.com/agejevasv/goradion/assets/1682086/f6015616-a103-4ae5-9094-eabb4661aede">
+  <img width="777" alt="goradion" src="https://github.com/agejevasv/goradion/assets/1682086/dff2d402-76dc-4212-a1ef-86e2fad2ff73">
 </p>
 
 ## Setup
