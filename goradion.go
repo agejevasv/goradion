@@ -8,20 +8,25 @@ import (
 	"github.com/agejevasv/goradion/internal/radio"
 )
 
-func main() {
-	cfg := flag.String("s", "", "A link or a path to a stations.csv file")
-	ver := flag.Bool("v", false, "Show the version number and quit")
-	dbg := flag.Bool("d", false, "Enable debug log (file)")
-	flag.Parse()
+var cfg = flag.String("s", "", "A link or a path to a stations.csv file")
+var ver = flag.Bool("v", false, "Show the version number and quit")
+var dbg = flag.Bool("d", false, "Enable debug log (file)")
 
-	radio.InitLog(*dbg)
+func main() {
+	flag.Parse()
 
 	if *ver {
 		fmt.Println(radio.VersionString())
 		os.Exit(0)
 	}
 
+	radio.InitLog(*dbg)
+
 	stations, urls := radio.Stations(*cfg)
+	if len(stations) == 0 {
+		fmt.Println("Stations list is empty, exiting.")
+		os.Exit(0)
+	}
 
 	player := radio.NewPlayer()
 	go player.Start()

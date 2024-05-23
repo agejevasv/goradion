@@ -45,9 +45,11 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 
 	list.AddItem("Random", "", rune('*'), func() {
 		r := rand.Intn(len(stations))
-		for list.GetCurrentItem() == r+1 {
+
+		for len(stations) > 1 && player.info.Url == urls[r] {
 			r = rand.Intn(len(stations))
 		}
+
 		list.SetCurrentItem(r + 1)
 		go player.Toggle(stations[r], urls[r])
 	})
@@ -64,12 +66,13 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 	status.SetText("Ready [gray]| [green]Press ? for help")
 
 	volume := tview.NewTextView()
+	volume.SetDynamicColors(true)
 	volume.SetTextColor(tcell.ColorLightGray)
 	volume.SetTextAlign(tview.AlignRight)
 
 	statusFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
 		AddItem(status, 0, 100, true).
-		AddItem(volume, 0, 5, false)
+		AddItem(volume, 0, 25, false)
 
 	flex := tview.NewFlex().
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
@@ -142,7 +145,13 @@ func NewApp(player *Player, stations, urls []string) *tview.Application {
 			} else {
 				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, stripBraces(inf.Song)))
 			}
-			volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
+
+			if inf.Bitrate > 0 {
+				volume.SetText(fmt.Sprintf("%d kb/s [gray]|[lightgray] %d%%", inf.Bitrate, inf.Volume))
+			} else {
+				volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
+			}
+
 			app.Draw()
 		}
 	}()

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"sync"
@@ -33,6 +34,7 @@ type Info struct {
 	PrevSong string
 	Url      string
 	Volume   int
+	Bitrate  int
 }
 
 type Retry struct {
@@ -142,6 +144,7 @@ func (p *Player) Toggle(station, url string) {
 
 	p.info.Station = station
 	p.info.Status = buffering
+	p.info.Bitrate = 0
 	p.info.Song = ""
 	p.Info <- *p.info
 
@@ -157,6 +160,7 @@ func (p *Player) Stop() {
 	writeToMPV([]byte(cmd))
 	p.info.Status = stopped
 	p.info.Song = ""
+	p.info.Bitrate = 0
 	p.Info <- *p.info
 }
 
@@ -190,10 +194,15 @@ func (p *Player) readMPVEvents() {
 	}
 	defer c.Close()
 
-	cmd := fmt.Sprintf(`{"command": ["observe_property", 1, "filtered-metadata"]}%s`, "\n")
+	cmds := []string{
+		fmt.Sprintf(`{"command": ["observe_property", 1, "filtered-metadata"]}%s`, "\n"),
+		fmt.Sprintf(`{"command": ["observe_property", 1, "audio-bitrate"]}%s`, "\n"),
+	}
 
-	if _, err = c.Write([]byte(cmd)); err != nil {
-		log.Println(err)
+	for _, cmd := range cmds {
+		if _, err = c.Write([]byte(cmd)); err != nil {
+			log.Println(err)
+		}
 	}
 
 	for {
@@ -207,9 +216,19 @@ func (p *Player) readMPVEvents() {
 		rsp := unmarshal(eventBytes)
 		log.Println(rsp)
 
-		if data := rsp["data"]; data != nil {
-			p.setCurrentSong(data.(map[string]any))
-			continue
+		if eventIs(rsp, "property-change") && nameIs(rsp, "filtered-metadata") {
+			meta, ok := rsp["data"].(map[string]any)
+			if ok {
+				p.setCurrentSong(meta)
+			}
+		}
+
+		if eventIs(rsp, "property-change") && nameIs(rsp, "audio-bitrate") {
+			br, ok := rsp["data"].(float64)
+			if ok {
+				p.info.Bitrate = int(math.Round(br / 1000.0))
+				p.Info <- *p.info
+			}
 		}
 
 		if eventIs(rsp, "playback-restart") && p.info.Status == buffering {
@@ -327,4 +346,18 @@ func reasonIsAnyOf(m map[string]any, needle ...string) bool {
 
 func eventIs(m map[string]any, needle string) bool {
 	return m["event"] != nil && m["event"].(string) == needle
+}
+
+func nameIs(m map[string]any, needle ...string) bool {
+	if m["name"] == nil {
+		return false
+	}
+
+	for _, n := range needle {
+		if m["name"].(string) == n {
+			return true
+		}
+	}
+
+	return false
 }
