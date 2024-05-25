@@ -216,13 +216,6 @@ func (p *Player) readMPVEvents() {
 		rsp := unmarshal(eventBytes)
 		log.Println(rsp)
 
-		if eventIs(rsp, "property-change") && nameIs(rsp, "filtered-metadata") {
-			meta, ok := rsp["data"].(map[string]any)
-			if ok {
-				p.setCurrentSong(meta)
-			}
-		}
-
 		if eventIs(rsp, "property-change") && nameIs(rsp, "audio-bitrate") {
 			br, ok := rsp["data"].(float64)
 			if ok {
@@ -233,6 +226,13 @@ func (p *Player) readMPVEvents() {
 
 		if eventIs(rsp, "playback-restart") && p.info.Status == buffering {
 			p.setStatusPlaying()
+		}
+
+		if eventIs(rsp, "property-change") && nameIs(rsp, "filtered-metadata") {
+			meta, ok := rsp["data"].(map[string]any)
+			if ok {
+				p.setCurrentSong(meta)
+			}
 		}
 
 		if eventIs(rsp, "end-file") && reasonIsAnyOf(rsp, "eof", "error", "unknown") {
