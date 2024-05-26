@@ -10,7 +10,8 @@ import (
 
 var cfg = flag.String("s", "", "A link or a path to a stations.csv file")
 var ver = flag.Bool("v", false, "Show the version number and quit")
-var dbg = flag.Bool("d", false, "Enable debug log (file)")
+var dbg = flag.Bool("d", false, "Enable debug log (goradion.log file in a current dir)")
+var upd = flag.Bool("u", false, "Update default playlist")
 
 func main() {
 	flag.Parse()
@@ -18,6 +19,12 @@ func main() {
 	if *ver {
 		fmt.Println(radio.VersionString())
 		os.Exit(0)
+	}
+
+	if *upd {
+		if err := radio.CacheDefaultStations(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
 	}
 
 	radio.InitLog(*dbg)

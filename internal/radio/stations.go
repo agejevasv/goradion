@@ -73,7 +73,6 @@ func Stations(sta string) ([]string, []string) {
 	var scanner *bufio.Scanner
 
 	if sta == "" {
-		go cacheDefaultStations()
 		if s, err := cachedDefaultStations(); err != nil {
 			scanner = bufio.NewScanner(strings.NewReader(defaultStationsCSV))
 		} else {
@@ -115,15 +114,14 @@ func Stations(sta string) ([]string, []string) {
 	return stat, urls
 }
 
-func cacheDefaultStations() {
+func CacheDefaultStations() error {
 	s, err := fetchStations(defaultStationsURL)
 
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
 
-	ioutil.WriteFile(cacheFileName(), []byte(s), 0644)
+	return ioutil.WriteFile(cacheFileName(), []byte(s), 0644)
 }
 
 func cacheFileName() string {
@@ -142,10 +140,15 @@ func cachedDefaultStations() ([]byte, error) {
 
 func fetchStations(url string) (string, error) {
 	resp, err := http.Get(url)
+
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Failed to GET %s, status code: %d", url, resp.StatusCode)
+	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {

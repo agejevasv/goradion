@@ -58,7 +58,7 @@ Keyboard Control
   *
     Toggle playing a random station.
 
-  a-z
+  a-z and A-Z
     Toggle playing a station marked with a given letter.
 
   Enter and Space

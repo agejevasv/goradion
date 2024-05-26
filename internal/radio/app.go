@@ -14,7 +14,7 @@ const helpString = `Keyboard Control
 	[green]*[default]
 		Toggle playing a random station.
 
-	[green]a[default]-[green]z[default]
+	[green]a[default]-[green]z[default] and [green]A[default]-[green]Z[default]
 		Toggle playing a station marked with a given letter.
 
 	[green]Enter[default] and [green]Space[default]
