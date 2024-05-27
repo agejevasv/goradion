@@ -125,14 +125,15 @@ func (p *Player) Toggle(station, url string) {
 	p.Lock()
 	defer p.Unlock()
 
-	if p.info.Url != "" {
-		p.Stop()
+	if url == "" {
+		return
+	}
 
-		if url == p.info.Url {
-			p.info.PrevSong = ""
-			p.info.Url = ""
-			return
-		}
+	if url == p.info.Url {
+		p.Stop()
+		p.info.PrevSong = ""
+		p.info.Url = ""
+		return
 	}
 
 	if p.retry.cancel != nil {
@@ -197,6 +198,7 @@ func (p *Player) readMPVEvents() {
 	cmds := []string{
 		fmt.Sprintf(`{"command": ["observe_property", 1, "filtered-metadata"]}%s`, "\n"),
 		fmt.Sprintf(`{"command": ["observe_property", 1, "audio-bitrate"]}%s`, "\n"),
+		fmt.Sprintf(`{"command": ["observe_property", 1, "pause"]}%s`, "\n"),
 	}
 
 	for _, cmd := range cmds {
@@ -214,13 +216,23 @@ func (p *Player) readMPVEvents() {
 		}
 
 		rsp := unmarshal(eventBytes)
-		log.Println(rsp)
 
 		if eventIs(rsp, "property-change") && nameIs(rsp, "audio-bitrate") {
 			br, ok := rsp["data"].(float64)
 			if ok {
 				p.info.Bitrate = int(math.Round(br / 1000.0))
 				p.Info <- *p.info
+			}
+		} else {
+			log.Println(rsp)
+		}
+
+		// MPV pauses (at least on Mac) after switching off bluetooth headphones (resuming playback on main soundcard).
+		// Let's permanently disable pause, we don't need it.
+		if eventIs(rsp, "property-change") && nameIs(rsp, "pause") {
+			if pause, ok := rsp["data"].(bool); ok && pause {
+				cmd := fmt.Sprintf(`{"command": ["set_property", "pause", false]}%s`, "\n")
+				writeToMPV([]byte(cmd))
 			}
 		}
 
@@ -271,6 +283,10 @@ func (p *Player) setStatusUnexpectedEndFile(reason string) {
 }
 
 func (p *Player) setCurrentSong(m map[string]any) {
+	if p.info.Status == buffering {
+		p.setStatusPlaying()
+	}
+
 	title, ok := m["icy-title"]
 
 	song := ""
