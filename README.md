@@ -11,21 +11,23 @@ Goradion is a command line radio player based on `mpv`. Goradion is inspired by 
 **Warning**: _[On some Windows machines](https://github.com/agejevasv/goradion/issues/1), a virus scanner identifies the binary as infected (https://go.dev/doc/faq#virus), in this case it's best to build the binary yourself: `go build .`._
 
 1. Prerequisites: [mpv](https://mpv.io/)
-```bash
-# Mac
-brew install mpv
+    - Mac
+      - `brew install mpv`
+    
+    - Ubuntu
+      - `apt install mpv`
+     
+    - Arch Linux
+      - `pacman -S mpv`
+        
+    - Windows
+      - Download: [mpv](https://sourceforge.net/projects/mpv-player-windows/files/)
+      - Unpack e.g. into c:\mpv
+      - Add this dir to the PATH, either via GUI or: `setx /M PATH "%PATH%;c:\mpv"`
+         
+    - Other OSes
+      - Install mpv using your package manager or refer to https://mpv.io/installation/
 
-# Ubuntu
-apt install mpv
-
-# Windows
-Download: https://sourceforge.net/projects/mpv-player-windows/files/latest/download
-Unpack e.g. into c:\mpv
-Add this dir to the PATH, either via GUI or: `setx /M PATH "%PATH%;c:\mpv"`
-
-# Other OSes:
-Install mpv using your package manager or refer to https://mpv.io/installation/
-```
 2. [Download goradion](https://github.com/agejevasv/goradion/releases/latest)
 3. Mark it as executable (not needed on Windows):
 ```bash
@@ -33,7 +35,7 @@ chmod +x goradion-<version>
 ```
 
 ## Run
-On Windows just double click the downloaded exe, on other OSes:
+On Windows just double click the downloaded exe (or run via cmd to use flags), on other OSes:
 ```bash
 # Starts with preset radio stations
 goradion-<version>
