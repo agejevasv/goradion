@@ -6,10 +6,6 @@ Goradion is a command line radio player based on `mpv`. Goradion is inspired by 
 
 ## Setup
 
-**Arch Linux**: You can use AUR packages [goradion](https://aur.archlinux.org/packages/goradion) and [goradion-bin](https://aur.archlinux.org/packages/goradion-bin) maintained by [Amolith](https://github.com/Amolith).
-
-**Warning**: _[On some Windows machines](https://github.com/agejevasv/goradion/issues/1), a virus scanner identifies the binary as infected (https://go.dev/doc/faq#virus), in this case it's best to build the binary yourself: `go build .`._
-
 1. Prerequisites: [mpv](https://mpv.io/)
     - Mac
       - `brew install mpv`
@@ -33,6 +29,10 @@ Goradion is a command line radio player based on `mpv`. Goradion is inspired by 
 ```bash
 chmod +x goradion-<version>
 ```
+
+**Arch Linux**: You can use AUR packages [goradion](https://aur.archlinux.org/packages/goradion) and [goradion-bin](https://aur.archlinux.org/packages/goradion-bin) maintained by [Amolith](https://github.com/Amolith).
+
+**Warning**: _[On some Windows machines](https://github.com/agejevasv/goradion/issues/1), a virus scanner identifies the binary as infected (https://go.dev/doc/faq#virus), in this case it's best to build the binary yourself: `go build .`._
 
 ## Run
 On Windows just double click the downloaded exe (or run via cmd to use flags), on other OSes:
