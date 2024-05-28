@@ -35,20 +35,20 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Lounge Motion FM,https://vm.motionfm.com/motionthree_free
 	Smooth Motion FM,https://vm.motionfm.com/motiontwo_free
 	Magic Radio,http://mp3.magic-radio.net/
+	Jammin Vibez Radio,https://azuracast.jammimvibez.com/listen/classics/stream
 	Classic Rock Florida,https://vip2.fastcast4u.com/proxy/classicrockdoug?mp=/1
 	Classic Vinyl,http://icecast.walmradio.com:8000/classic
 	The Jazz Groove: Mix #1,http://east-mp3-128.streamthejazzgroove.com/stream
 	The Jazz Groove: Mix #2,http://west-mp3-128.streamthejazzgroove.com/stream
 	Jazz24,https://live.amperwave.net/direct/ppm-jazz24aac256-ibc1
-	Linn Jazz,http://radio.linn.co.uk:8000/autodj
 	HiRes: City Radio Smooth & Jazz,http://cityradio.ddns.net:8000/cityradio48flac
+	HiRes: City Radio Pop,http://cityradio.ddns.net:8000/citypop
 	HiRes: Radio Paradise,https://stream.radioparadise.com/flacm
 	HiRes: Radio Paradise Mellow,https://stream.radioparadise.com/mellow-flacm
 	HiRes: Radio Paradise Rock,https://stream.radioparadise.com/rock-flacm
 	HiRes: JB Radio2,https://maggie.torontocast.com:8076/flac
 	HiRes: MaXXima,http://maxxima.mine.nu:8000/maxx.ogg
 	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac
-	HiRes: SomaFM: Groove Salad,https://hls.somafm.com/hls/groovesalad/FLAC/program.m3u8
 	HiRes: Naim Radio,http://mscp3.live-streams.nl:8360/flac.flac
 	HiRes: Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-flac.flac
 	HiRes: Naim Classical,http://mscp3.live-streams.nl:8250/class-flac.flac
@@ -60,14 +60,13 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	HiRes: SuperStereo 6,http://icecast.centaury.cl:7570/SuperStereoHiRes6
 	HiRes: SuperStereo 7,http://icecast.centaury.cl:7570/SuperStereoHiRes7
 	HiRes: ∏ano,https://stream.p-node.org/piano.flac
+	Linn Radio, http://radio.linn.co.uk:8003/autodj
+	Linn Jazz,http://radio.linn.co.uk:8000/autodj
+	Linn Classical,http://radio.linn.co.uk:8004/autodj
 	Mother Earth Jazz,https://motherearth.streamserver24.com/listen/motherearth_jazz/motherearth.jazz.mp4
 	Mother Earth Instrumental,https://motherearth.streamserver24.com/listen/motherearth_instrumental/motherearth.instrumental.aac
 	Mother Earth Radio,https://motherearth.streamserver24.com/listen/motherearth/motherearth.aac
-	Mother Earth Klassic,https://motherearth.streamserver24.com:18910/motherearth.klassik.aac
-	Linn Classical,http://radio.linn.co.uk:8004/autodj
-	Linn Radio: http://radio.linn.co.uk:8003/autodj
-	Jammin Vibez Radio,https://azuracast.jammimvibez.com/listen/classics/stream
-	Seeburg 1000,https://psn3.prostreaming.net/proxy/seeburg/stream/;`
+	Mother Earth Klassic,https://motherearth.streamserver24.com:18910/motherearth.klassik.aac`
 
 func Stations(sta string) ([]string, []string) {
 	var scanner *bufio.Scanner
