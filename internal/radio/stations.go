@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"path"
@@ -117,7 +116,7 @@ func CacheDefaultStations() error {
 		return err
 	}
 
-	return ioutil.WriteFile(cacheFileName(), []byte(s), 0644)
+	return os.WriteFile(cacheFileName(), []byte(s), 0644)
 }
 
 func cacheFileName() string {
@@ -131,7 +130,7 @@ func cacheFileName() string {
 }
 
 func cachedDefaultStations() ([]byte, error) {
-	return ioutil.ReadFile(cacheFileName())
+	return os.ReadFile(cacheFileName())
 }
 
 func fetchStations(url string) (string, error) {
