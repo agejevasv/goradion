@@ -121,15 +121,15 @@ func (p *Player) VolumeDn() {
 	p.info.Volume -= 5
 }
 
-func (p *Player) Toggle(station, url string) {
+func (p *Player) Toggle(station Station) {
 	p.Lock()
 	defer p.Unlock()
 
-	if url == "" {
+	if station.url == "" {
 		return
 	}
 
-	if url == p.info.Url {
+	if station.url == p.info.Url {
 		p.Stop()
 		p.info.PrevSong = ""
 		p.info.Url = ""
@@ -143,13 +143,13 @@ func (p *Player) Toggle(station, url string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.retry = &Retry{ctx: ctx, cancel: cancel}
 
-	p.info.Station = station
+	p.info.Station = station.title
 	p.info.Status = buffering
 	p.info.Bitrate = 0
 	p.info.Song = ""
 	p.Info <- *p.info
 
-	p.Load(url)
+	p.Load(station.url)
 }
 
 func (p *Player) Stop() {

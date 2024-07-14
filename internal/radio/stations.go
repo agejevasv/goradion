@@ -7,67 +7,72 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"runtime"
 	"strings"
 )
 
 const defaultStationsURL = "https://gist.githubusercontent.com/agejevasv/" +
 	"58afa748a7bc14dcccab1ca237d14a0b/raw/stations.csv"
 
-const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent130.pls
-	SomaFM: Beat Blender,https://somafm.com/beatblender.pls
-	SomaFM: Bossa Beyond,https://somafm.com/bossa256.pls
-	SomaFM: Groove Salad Classic,https://somafm.com/gsclassic130.pls
-	SomaFM: DEF CON Radio,https://somafm.com/defcon256.pls
-	SomaFM: Fluid,http://somafm.com/fluid130.pls
-	SomaFM: Cliqhop IDM,https://somafm.com/cliqhop256.pls
-	SomaFM: Illinois Street Lounge,http://somafm.com/illstreet.pls
-	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls
-	SomaFM: Drone Zone,https://somafm.com/dronezone256.pls
-	9128live,https://streams.radio.co/s0aa1e6f4a/listen
-	Chillsky,https://lfhh.radioca.st/stream
-	Nightride,https://stream.nightride.fm/nightride.ogg
-	Jungletrain.net,http://stream1.jungletrain.net:8000
-	Deepinside Radio Show,https://n44a-eu.rcs.revma.com/uyrbt6xuhnruv
-	Deepinside Guest Sessions,https://n30a-eu.rcs.revma.com/u62vcepz3tzuv
-	Deep Motion FM,https://vm.motionfm.com/motionone_free
-	Lounge Motion FM,https://vm.motionfm.com/motionthree_free
-	Smooth Motion FM,https://vm.motionfm.com/motiontwo_free
-	Magic Radio,http://mp3.magic-radio.net/
-	Jammin Vibez Radio,https://azuracast.jammimvibez.com/listen/classics/stream
-	Classic Rock Florida,https://vip2.fastcast4u.com/proxy/classicrockdoug?mp=/1
-	Classic Vinyl,http://icecast.walmradio.com:8000/classic
-	The Jazz Groove: Mix #1,http://east-mp3-128.streamthejazzgroove.com/stream
-	The Jazz Groove: Mix #2,http://west-mp3-128.streamthejazzgroove.com/stream
-	Jazz24,https://live.amperwave.net/direct/ppm-jazz24aac256-ibc1
-	Linn Radio, http://radio.linn.co.uk:8003/autodj
-	Linn Jazz,http://radio.linn.co.uk:8000/autodj
-	Linn Classical,http://radio.linn.co.uk:8004/autodj
-	Mother Earth Radio,https://motherearth.streamserver24.com/listen/motherearth/motherearth.aac
-	Mother Earth Jazz,https://motherearth.streamserver24.com/listen/motherearth_jazz/motherearth.jazz.mp4
-	Mother Earth Instrumental,https://motherearth.streamserver24.com/listen/motherearth_instrumental/motherearth.instrumental.aac
-	Mother Earth Klassic,https://motherearth.streamserver24.com:18910/motherearth.klassik.aac
-	FluxFM: Jazzradio Schwarzenstein,https://streams.fluxfm.de/jazzschwarz/mp3-320/audio/
-	FluxFM: Xjazz,https://streams.fluxfm.de/xjazz/mp3-320/audio/
-	FluxFM: Chillhop,https://streams.fluxfm.de/Chillhop/mp3-320/streams.fluxfm.de/
-	HiRes: Radio Paradise,https://stream.radioparadise.com/flacm
-	HiRes: Radio Paradise Mellow,https://stream.radioparadise.com/mellow-flacm
-	HiRes: Radio Paradise Rock,https://stream.radioparadise.com/rock-flacm
-	HiRes: JB Radio2,https://maggie.torontocast.com:8076/flac
-	HiRes: Naim Radio,http://mscp3.live-streams.nl:8360/flac.flac
-	HiRes: Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-flac.flac
-	HiRes: Naim Classical,http://mscp3.live-streams.nl:8250/class-flac.flac
-	HiRes: SuperStereo 1,http://icecast.centaury.cl:7570/SuperStereoHiRes1
-	HiRes: SuperStereo 2,http://icecast.centaury.cl:7570/SuperStereoHiRes2
-	HiRes: SuperStereo 3,http://icecast.centaury.cl:7570/SuperStereoHiRes3
-	HiRes: SuperStereo 4,http://icecast.centaury.cl:7570/SuperStereoHiRes4
-	HiRes: SuperStereo 5,http://icecast.centaury.cl:7570/SuperStereoHiRes5
-	HiRes: SuperStereo 6,http://icecast.centaury.cl:7570/SuperStereoHiRes6
-	HiRes: SuperStereo 7,http://icecast.centaury.cl:7570/SuperStereoHiRes7
-	HiRes: MaXXima,http://maxxima.mine.nu:8000/maxx.ogg
-	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac`
+const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent130.pls,Downtempo;Lounge
+	SomaFM: Beat Blender,https://somafm.com/beatblender.pls,House;Downtempo;Electronic
+	SomaFM: Bossa Beyond,https://somafm.com/bossa256.pls,Jazz;Lounge
+	SomaFM: Groove Salad Classic,https://somafm.com/gsclassic130.pls,Downtempo;Electronic
+	SomaFM: DEF CON Radio,https://somafm.com/defcon256.pls,Electronic
+	SomaFM: Fluid,http://somafm.com/fluid130.pls,Electronic
+	SomaFM: Cliqhop IDM,https://somafm.com/cliqhop256.pls,Electronic
+	SomaFM: Illinois Street Lounge,http://somafm.com/illstreet.pls,Oldies;Lounge
+	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls,Vaporwave
+	SomaFM: Drone Zone,https://somafm.com/dronezone256.pls,Ambient
+	9128live,https://streams.radio.co/s0aa1e6f4a/listen,Electronic
+	Chillsky,https://lfhh.radioca.st/stream,Chillhop;Downtempo
+	Nightride,https://stream.nightride.fm/nightride.ogg,Synthwave;Electronic
+	Jungletrain.net,http://stream1.jungletrain.net:8000,Drum And Bass;Electronic
+	Deepinside Radio Show,https://n44a-eu.rcs.revma.com/uyrbt6xuhnruv,House;Electronic
+	Deepinside Guest Sessions,https://n30a-eu.rcs.revma.com/u62vcepz3tzuv,House;Electronic
+	Deep Motion FM,https://vm.motionfm.com/motionone_free,House;Electronic
+	Lounge Motion FM,https://vm.motionfm.com/motionthree_free,Downtempo;Lounge;Electronic
+	Smooth Motion FM,https://vm.motionfm.com/motiontwo_free,Soul;Lounge
+	Magic Radio,http://mp3.magic-radio.net/,80s
+	Jammin Vibez Radio,https://azuracast.jammimvibez.com/listen/classics/stream,Reggae
+	Classic Rock Florida,https://vip2.fastcast4u.com/proxy/classicrockdoug?mp=/1,Rock
+	Classic Vinyl,http://icecast.walmradio.com:8000/classic,Jazz;Oldies;Jazz
+	The Jazz Groove: Mix #1,http://east-mp3-128.streamthejazzgroove.com/stream,Jazz;Instrumental
+	The Jazz Groove: Mix #2,http://west-mp3-128.streamthejazzgroove.com/stream,Jazz;Instrumental
+	Jazz24,https://live.amperwave.net/direct/ppm-jazz24aac256-ibc1,Jazz;Instrumental
+	Linn Radio, http://radio.linn.co.uk:8003/autodj,Eclectic
+	Linn Jazz,http://radio.linn.co.uk:8000/autodj,Jazz;Instrumental
+	Linn Classical,http://radio.linn.co.uk:8004/autodj,Classical;Instrumental
+	Mother Earth Radio,https://motherearth.streamserver24.com/listen/motherearth/motherearth.aac,Eclectic
+	Mother Earth Jazz,https://motherearth.streamserver24.com/listen/motherearth_jazz/motherearth.jazz.mp4,Jazz;Instrumental
+	Mother Earth Instrumental,https://motherearth.streamserver24.com/listen/motherearth_instrumental/motherearth.instrumental.aac,Instrumental
+	Mother Earth Klassic,https://motherearth.streamserver24.com:18910/motherearth.klassik.aac,Classical;Instrumental
+	FluxFM: Jazzradio Schwarzenstein,https://streams.fluxfm.de/jazzschwarz/mp3-320/audio/,Jazz;Instrumental
+	FluxFM: Xjazz,https://streams.fluxfm.de/xjazz/mp3-320/audio/,Electronic;Jazz
+	FluxFM: Chillhop,https://streams.fluxfm.de/Chillhop/mp3-320/streams.fluxfm.de/,Chillhop;Downtempo
+	HiRes: Radio Paradise,https://stream.radioparadise.com/flacm,Eclectic
+	HiRes: Radio Paradise Mellow,https://stream.radioparadise.com/mellow-flacm,Ballads;Eclectic
+	HiRes: Radio Paradise Rock,https://stream.radioparadise.com/rock-flacm,Rock
+	HiRes: JB Radio2,https://maggie.torontocast.com:8076/flac,Rock;Eclectic
+	HiRes: Naim Radio,http://mscp3.live-streams.nl:8360/flac.flac,Eclectic
+	HiRes: Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-flac.flac,Jazz
+	HiRes: Naim Classical,http://mscp3.live-streams.nl:8250/class-flac.flac,Classical;Instrumental
+	HiRes: SuperStereo 1: Yacht Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes1,Rock
+	HiRes: SuperStereo 2: 50s 60s 70s,http://icecast.centaury.cl:7570/SuperStereoHiRes2,Oldies;Eclectic
+	HiRes: SuperStereo 3: 80s,http://icecast.centaury.cl:7570/SuperStereoHiRes3,80s
+	HiRes: SuperStereo 4: Ballads 80s 90s 00s,http://icecast.centaury.cl:7570/SuperStereoHiRes4,Ballads
+	HiRes: SuperStereo 5: Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes5,Rock
+	HiRes: SuperStereo 6: Instrumental Music,http://icecast.centaury.cl:7570/SuperStereoHiRes6,Instrumental
+	HiRes: SuperStereo 7: Jazz,http://icecast.centaury.cl:7570/SuperStereoHiRes7,Jazz;Instrumental
+	HiRes: MaXXima,http://maxxima.mine.nu:8000/maxx.ogg,House;Electronic
+	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House`
 
-func Stations(sta string) ([]string, []string) {
+type Station struct {
+	title string
+	url   string
+	tags  []string
+}
+
+func Stations(sta string) []Station {
 	var reader *csv.Reader
 
 	if sta == "" {
@@ -92,21 +97,26 @@ func Stations(sta string) ([]string, []string) {
 		reader = csv.NewReader(file)
 	}
 
-	stat := make([]string, 0)
-	urls := make([]string, 0)
-
+	reader.FieldsPerRecord = -1
 	records, err := reader.ReadAll()
+
 	if err != nil {
 		fmt.Println("Can't parse stations CSV:", err)
 		os.Exit(1)
 	}
 
+	stations := make([]Station, 0)
 	for _, r := range records {
-		stat = append(stat, strings.Trim(r[0], " 	"))
-		urls = append(urls, strings.Trim(r[1], " 	"))
+		s := new(Station)
+		s.title = strings.Trim(r[0], " 	")
+		s.url = strings.Trim(r[1], " 	")
+		if len(r) > 2 {
+			s.tags = strings.Split(strings.Trim(r[2], " 	"), ";")
+		}
+		stations = append(stations, *s)
 	}
 
-	return stat, urls
+	return stations
 }
 
 func CacheDefaultStations() error {
@@ -120,13 +130,14 @@ func CacheDefaultStations() error {
 }
 
 func cacheFileName() string {
-	dir := "/tmp"
+	dir, _ := os.UserHomeDir()
+	cfg := path.Join(dir, ".config")
 
-	if runtime.GOOS == "windows" {
-		dir, _ = os.UserHomeDir()
+	if _, err := os.Stat(cfg); err == nil {
+		dir = cfg
 	}
 
-	return path.Join(dir, "goradion.csv")
+	return path.Join(dir, fmt.Sprintf("goradion-%s.csv", Version))
 }
 
 func cachedDefaultStations() ([]byte, error) {

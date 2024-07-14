@@ -3,6 +3,7 @@ package radio
 import (
 	"fmt"
 	"math/rand"
+	"sort"
 	"strings"
 
 	"github.com/gdamore/tcell/v2"
@@ -13,6 +14,12 @@ const helpString = `Keyboard Control
 
 	[green]*[default]
 		Toggle playing a random station.
+
+	[green]/[default]
+		Show tag selection screen.
+
+	[green]#[default]
+		Clear selected tag.
 
 	[green]a[default]-[green]z[default] and [green]A[default]-[green]Z[default]
 		Toggle playing a station marked with a given letter.
@@ -33,130 +40,259 @@ const helpString = `Keyboard Control
 		Close current window.
 
 	[green]?[default]
-		Toggle help.`
+		Show help screen.`
 
-func NewApp(player *Player, stations, urls []string) *tview.Application {
-	list := tview.NewList()
-	list.ShowSecondaryText(false)
-	list.SetBackgroundColor(tcell.ColorDefault)
-	list.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorGreen))
-	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
-	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
+type Page int
 
-	list.AddItem("Random", "", rune('*'), func() {
-		r := rand.Intn(len(stations))
+const (
+	Main = iota
+	Help
+	Tags
+)
 
-		for len(stations) > 1 && player.info.Url == urls[r] {
-			r = rand.Intn(len(stations))
-		}
+type Application struct {
+	pageNames    []string
+	stations     []Station
+	player       *Player
+	tag          string
+	app          *tview.Application
+	pages        *tview.Pages
+	stationsList *tview.List
+	tagsList     *tview.List
+	status       *tview.TextView
+	volume       *tview.TextView
+}
 
-		list.SetCurrentItem(r + 1)
-		go player.Toggle(stations[r], urls[r])
-	})
-
-	for i := 0; i < len(stations); i++ {
-		list = list.AddItem(stations[i], "", idxToRune(i), func() {
-			go player.Toggle(stations[i], urls[i])
-		})
+func NewApp(player *Player, stations []Station) *Application {
+	a := &Application{
+		player:    player,
+		stations:  stations,
+		pageNames: []string{"Main", "Help", "Tags"},
 	}
 
-	status := tview.NewTextView()
-	status.SetTextColor(tcell.ColorLightGray)
-	status.SetDynamicColors(true)
-	status.SetText("Ready [gray]| [green]Press ? for help")
+	a.setupPages()
 
-	volume := tview.NewTextView()
-	volume.SetDynamicColors(true)
-	volume.SetTextColor(tcell.ColorLightGray)
-	volume.SetTextAlign(tview.AlignRight)
+	a.app = tview.NewApplication().
+		SetRoot(a.pages, true).
+		EnableMouse(true).
+		SetMouseCapture(devNullMouse()).
+		SetInputCapture(a.inputCapture())
+
+	go a.updateStatus()
+
+	return a
+}
+
+func (a *Application) Run() error {
+	return a.app.Run()
+}
+
+func (a *Application) setupPages() {
+	a.stationsList = a.setupStationsList(newList(), a.stations)
+
+	a.status = tview.NewTextView().
+		SetTextColor(tcell.ColorLightGray).
+		SetDynamicColors(true).
+		SetText("Ready [gray]| [green]Press ? for help")
+
+	a.volume = tview.NewTextView().
+		SetDynamicColors(true).
+		SetTextColor(tcell.ColorLightGray).
+		SetTextAlign(tview.AlignRight)
 
 	statusFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(status, 0, 100, true).
-		AddItem(volume, 0, 25, false)
+		AddItem(a.status, 0, 100, true).
+		AddItem(a.volume, 0, 25, false)
 
 	flex := tview.NewFlex().
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(list, 0, 100, true).
+			AddItem(a.stationsList, 0, 100, true).
 			AddItem(statusFlex, 0, 1, true), 0, 1, true)
 
-	help := tview.NewTextView()
-	help.SetDynamicColors(true)
+	help := tview.NewTextView().
+		SetDynamicColors(true).
+		SetText(fmt.Sprintf("[green]%s\n\n[default]%s", VersionString(), helpString))
 	help.SetBackgroundColor(tcell.ColorDefault)
-	help.SetText(fmt.Sprintf("[green]%s\n\n[default]%s", VersionString(), helpString))
 
-	currentPage := "Main"
-	pages := tview.NewPages()
-	pages.AddPage("Main", flex, true, true)
-	pages.AddPage("Help", help, true, true)
-	pages.SwitchToPage(currentPage)
+	a.pages = tview.NewPages().
+		AddPage(a.pageNames[Main], flex, true, true).
+		AddPage(a.pageNames[Tags], a.setupTagsList(), true, false).
+		AddPage(a.pageNames[Help], help, true, false)
+}
 
-	app := tview.NewApplication()
-	app.SetRoot(pages, true)
+func (a *Application) show(page Page) {
+	a.pages.SwitchToPage(a.pageNames[page])
+}
 
-	mc := func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
-		// do nothing, please
-		return nil, action
+func (a *Application) toggle(page Page) {
+	if a.pages.GetPageNames(true)[0] == a.pageNames[page] {
+		a.show(Main)
+	} else {
+		a.show(page)
 	}
-	app.EnableMouse(true).SetMouseCapture(mc)
+}
 
-	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
+func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey {
+	return func(event *tcell.EventKey) *tcell.EventKey {
 		switch key := event.Key(); key {
 		case tcell.KeyEscape:
-			if currentPage == "Help" {
-				pages.SwitchToPage("Main")
-				currentPage = "Main"
+			if a.pages.GetPageNames(true)[0] != a.pageNames[Main] {
+				a.show(Main)
 				return nil
+			} else if a.pages.GetPageNames(true)[0] == a.pageNames[Main] && a.tag != "" {
+				a.tag = ""
+				a.setupStationsList(a.stationsList, a.stations)
+				return nil
+			} else {
+				a.app.Stop()
 			}
-			app.Stop()
 		case tcell.KeyLeft:
-			player.VolumeDn()
+			a.player.VolumeDn()
 			return nil
 		case tcell.KeyRight:
-			player.VolumeUp()
+			a.player.VolumeUp()
 			return nil
 		case tcell.KeyRune:
 			switch event.Rune() {
 			case '=', '+':
-				player.VolumeUp()
+				a.player.VolumeUp()
 				return nil
 			case '-', '_':
-				player.VolumeDn()
+				a.player.VolumeDn()
+				return nil
+			case '/':
+				a.toggle(Tags)
 				return nil
 			case '?':
-				if currentPage == "Help" {
-					pages.SwitchToPage("Main")
-					currentPage = "Main"
-				} else {
-					pages.SwitchToPage("Help")
-					currentPage = "Help"
-				}
+				a.toggle(Help)
 				return nil
 			}
 		}
 		return event
+	}
+}
+
+func (a *Application) updateStatus() {
+	for inf := range a.player.Info {
+		if inf.Song == "" && inf.Status == "" {
+			a.status.SetText(inf.Station)
+		} else if inf.Song == "" {
+			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, inf.Status))
+		} else {
+			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, stripBraces(inf.Song)))
+		}
+
+		if inf.Bitrate > 0 {
+			a.volume.SetText(fmt.Sprintf("%d kb/s [gray]|[lightgray] %d%%", inf.Bitrate, inf.Volume))
+		} else {
+			a.volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
+		}
+
+		a.app.Draw()
+	}
+}
+
+func (a *Application) setupStationsList(list *tview.List, stations []Station) *tview.List {
+	list.Clear()
+
+	skip := 1
+
+	if a.tag != "" {
+		list = list.AddItem(fmt.Sprintf("[red:black:]%s[-:-:-] [Clear Tag]", a.tag), "", rune('#'), func() {
+			a.tag = ""
+			a.setupStationsList(a.stationsList, a.stations)
+		})
+		skip++
+	}
+
+	list.AddItem("Random", "", rune('*'), func() {
+		r := rand.Intn(len(stations))
+
+		for len(stations) > 1 && a.player.info.Url == stations[r].url {
+			r = rand.Intn(len(stations))
+		}
+
+		list.SetCurrentItem(r + skip)
+		go a.player.Toggle(stations[r])
 	})
 
-	go func() {
-		for inf := range player.Info {
-			if inf.Song == "" && inf.Status == "" {
-				status.SetText(inf.Station)
-			} else if inf.Song == "" {
-				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, inf.Status))
-			} else {
-				status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, stripBraces(inf.Song)))
+	for i := 0; i < len(stations); i++ {
+		list = list.AddItem(stations[i].title, "", idxToRune(i), func() {
+			go a.player.Toggle(stations[i])
+		})
+	}
+
+	return list
+}
+
+func (a *Application) setupTagsList() *tview.List {
+	tagsList := newList()
+
+	tags := tags(a.stations)
+
+	for i := 0; i < len(tags); i++ {
+		tagsList = tagsList.AddItem(tags[i], "", idxToRune(i), func() {
+			a.tag = tags[i]
+
+			match := make([]Station, 0)
+
+			for i := 0; i < len(a.stations); i++ {
+				for _, t := range a.stations[i].tags {
+					if t == a.tag {
+						match = append(match, a.stations[i])
+						break
+					}
+				}
 			}
 
-			if inf.Bitrate > 0 {
-				volume.SetText(fmt.Sprintf("%d kb/s [gray]|[lightgray] %d%%", inf.Bitrate, inf.Volume))
-			} else {
-				volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
-			}
+			a.setupStationsList(a.stationsList, match)
+			a.show(Main)
+		})
+	}
 
-			app.Draw()
+	if len(tags) == 0 {
+		tagsList = tagsList.AddItem("No tags were found", "", rune('#'), func() {
+			a.show(Main)
+		})
+	}
+
+	return tagsList
+}
+
+func newList() *tview.List {
+	list := tview.NewList()
+	list.ShowSecondaryText(false)
+	list.SetBackgroundColor(tcell.ColorDefault)
+	list.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorGreen).Bold(true))
+	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
+	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
+	return list
+}
+
+func devNullMouse() func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
+	return func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
+		// do nothing, please
+		return nil, action
+	}
+}
+
+func tags(stations []Station) []string {
+	tagsMap := make(map[string]bool)
+
+	for _, s := range stations {
+		for _, t := range s.tags {
+			tagsMap[t] = true
 		}
-	}()
+	}
 
-	return app
+	tags := make([]string, 0, len(tagsMap))
+
+	for tag := range tagsMap {
+		tags = append(tags, tag)
+	}
+
+	sort.Sort(sort.StringSlice(tags))
+	return tags
 }
 
 func stripBraces(s string) string {

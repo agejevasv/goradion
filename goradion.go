@@ -29,7 +29,7 @@ func main() {
 
 	radio.InitLog(*dbg)
 
-	stations, urls := radio.Stations(*cfg)
+	stations := radio.Stations(*cfg)
 	if len(stations) == 0 {
 		fmt.Println("Stations list is empty, exiting.")
 		os.Exit(0)
@@ -39,7 +39,7 @@ func main() {
 	go player.Start()
 	defer player.Quit()
 
-	if err := radio.NewApp(player, stations, urls).Run(); err != nil {
+	if err := radio.NewApp(player, stations).Run(); err != nil {
 		panic(err)
 	}
 }
