@@ -57,11 +57,11 @@ Keyboard Control
   *
     Toggle playing a random station.
 
-	/
-		Show tag selection screen.
+  /
+    Show tag selection screen.
 
-	#
-		Clear selected tag.
+  #
+    Clear selected tag.
 
   a-z and A-Z
     Toggle playing a station marked with a given letter.
