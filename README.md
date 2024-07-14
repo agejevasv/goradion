@@ -57,6 +57,12 @@ Keyboard Control
   *
     Toggle playing a random station.
 
+	/
+		Show tag selection screen.
+
+	#
+		Clear selected tag.
+
   a-z and A-Z
     Toggle playing a station marked with a given letter.
 
@@ -76,5 +82,5 @@ Keyboard Control
     Close current window.
 
   ?
-    Toggle help.
+    Show help screen.
 ```
