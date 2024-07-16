@@ -194,6 +194,7 @@ func (a *Application) updateStatus() {
 
 func (a *Application) setupStationsList(list *tview.List, stations []Station) *tview.List {
 	list.Clear()
+	list.SetCurrentItem(0)
 
 	skip := 1
 
@@ -220,6 +221,10 @@ func (a *Application) setupStationsList(list *tview.List, stations []Station) *t
 		list = list.AddItem(stations[i].title, "", idxToRune(i), func() {
 			go a.player.Toggle(stations[i])
 		})
+
+		if a.player.info.Url == stations[i].url {
+			list.SetCurrentItem(i + skip)
+		}
 	}
 
 	return list
