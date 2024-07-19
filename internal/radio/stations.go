@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"strings"
 )
 
@@ -76,11 +75,7 @@ func Stations(sta string) []Station {
 	var reader *csv.Reader
 
 	if sta == "" {
-		if s, err := cachedDefaultStations(); err != nil {
-			reader = csv.NewReader(strings.NewReader(defaultStationsCSV))
-		} else {
-			reader = csv.NewReader(strings.NewReader(string(s)))
-		}
+		reader = csv.NewReader(strings.NewReader(defaultStationsCSV))
 	} else if strings.HasPrefix(sta, "http") {
 		s, err := fetchStations(sta)
 		if err != nil {
@@ -117,31 +112,6 @@ func Stations(sta string) []Station {
 	}
 
 	return stations
-}
-
-func CacheDefaultStations() error {
-	s, err := fetchStations(defaultStationsURL)
-
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(cacheFileName(), []byte(s), 0644)
-}
-
-func cacheFileName() string {
-	dir, _ := os.UserHomeDir()
-	cfg := path.Join(dir, ".config")
-
-	if _, err := os.Stat(cfg); err == nil {
-		dir = cfg
-	}
-
-	return path.Join(dir, fmt.Sprintf("goradion-%s.csv", Version))
-}
-
-func cachedDefaultStations() ([]byte, error) {
-	return os.ReadFile(cacheFileName())
 }
 
 func fetchStations(url string) (string, error) {
