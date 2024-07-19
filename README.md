@@ -39,16 +39,19 @@ goradion-<version>
 ```
 
 ## Stations
-For your own stations you can create a public [gist](https://gist.github.com/) file and pass a link with a raw version of it with `-s` flag, e.g.:
+The stations are configured using a CSV file with a titile, URL and optional, semicolon `;` separated tag(s), e.g.:
 
-```bash
-goradion -s https://gist.githubusercontent.com/agejevasv/58afa748a7bc14dcccab1ca237d14a0b/raw/stations.csv
+```csv
+Title,URL[,tag_1;...;tag_n]
+...
 ```
-
-You can also create this file locally if you prefer. You can start with downloading and then editing [default stations](https://gist.githubusercontent.com/agejevasv/58afa748a7bc14dcccab1ca237d14a0b/raw/stations.csv):
-
+Stations file can be passed with `-s` argument; goradion supports both local files and HTTP URLs, e.g.:
 ```bash
 goradion -s /path/to/stations.csv
+
+OR
+
+goradion -s https://path-to/stations.csv
 ```
 ## Keyboard Control
 ```
