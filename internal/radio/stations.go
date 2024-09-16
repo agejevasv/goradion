@@ -63,7 +63,12 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	HiRes: SuperStereo 6: Instrumental Music,http://icecast.centaury.cl:7570/SuperStereoHiRes6,Instrumental
 	HiRes: SuperStereo 7: Jazz,http://icecast.centaury.cl:7570/SuperStereoHiRes7,Jazz;Instrumental
 	HiRes: MaXXima,http://maxxima.mine.nu:8000/maxx.ogg,House;Electronic
-	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House`
+	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House
+	Rainwave Game,https://rainwave.cc/tune_in/1.mp3.m3u,Game Soundtrack
+	Rainwave OC Remix,https://rainwave.cc/tune_in/2.mp3.m3u,Game Soundtrack
+	Rainwave Cover,https://rainwave.cc/tune_in/3.mp3.m3u,Game Soundtrack
+	Rainwave Chiptune,https://rainwave.cc/tune_in/4.mp3.m3u,Game Soundtrack
+	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Game Soundtrack`
 
 type Station struct {
 	title string
