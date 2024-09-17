@@ -316,5 +316,15 @@ func idxToRune(i int) rune {
 		return rune(i + 65)
 	}
 
+	i -= 25
+
+	if i+48 <= 57 {
+		return rune(i + 48)
+	}
+
+	if i+48 == 58 {
+		return rune(i + 38)
+	}
+
 	return 0
 }
