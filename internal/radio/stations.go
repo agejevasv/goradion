@@ -23,7 +23,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls,Vaporwave
 	SomaFM: Drone Zone,https://somafm.com/dronezone256.pls,Ambient
 	9128live,https://streams.radio.co/s0aa1e6f4a/listen,Electronic
-	Chillsky,https://lfhh.radioca.st/stream,Chillhop;Downtempo
+	Chillsky,https://lfhh.radioca.st/stream,Chillhop;Lofi;Downtempo
 	Nightride,https://stream.nightride.fm/nightride.ogg,Synthwave;Electronic
 	Jungletrain.net,http://stream1.jungletrain.net:8000,Drum And Bass;Electronic
 	Deepinside Radio Show,https://n44a-eu.rcs.revma.com/uyrbt6xuhnruv,House;Electronic
@@ -47,7 +47,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Mother Earth Klassic,https://motherearth.streamserver24.com:18910/motherearth.klassik.aac,Classical;Instrumental
 	FluxFM: Jazzradio Schwarzenstein,https://streams.fluxfm.de/jazzschwarz/mp3-320/audio/,Jazz;Instrumental
 	FluxFM: Xjazz,https://streams.fluxfm.de/xjazz/mp3-320/audio/,Electronic;Jazz
-	FluxFM: Chillhop,https://streams.fluxfm.de/Chillhop/mp3-320/streams.fluxfm.de/,Chillhop;Downtempo
+	FluxFM: Chillhop,https://streams.fluxfm.de/Chillhop/mp3-320/streams.fluxfm.de/,Chillhop;Lofi;Downtempo
 	HiRes: Radio Paradise,https://stream.radioparadise.com/flacm,Eclectic
 	HiRes: Radio Paradise Mellow,https://stream.radioparadise.com/mellow-flacm,Ballads;Eclectic
 	HiRes: Radio Paradise Rock,https://stream.radioparadise.com/rock-flacm,Rock
@@ -68,7 +68,9 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Rainwave OC Remix,https://rainwave.cc/tune_in/2.mp3.m3u,Game Soundtrack
 	Rainwave Cover,https://rainwave.cc/tune_in/3.mp3.m3u,Game Soundtrack
 	Rainwave Chiptune,https://rainwave.cc/tune_in/4.mp3.m3u,Game Soundtrack
-	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Game Soundtrack`
+	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Game Soundtrack
+	freeCodeCamp: Code Radio,https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3,Chillhop;Lofi;Downtempo
+	BOX: Lofi Radio,https://play.streamafrica.net/lofiradio,Chillhop;Lofi;Downtempo`
 
 type Station struct {
 	title string
