@@ -310,20 +310,14 @@ func idxToRune(i int) rune {
 		return rune(i + 97)
 	}
 
-	i -= 26
-
-	if i+65 <= 90 {
+	// A-Z
+	if i -= 26; i+65 <= 90 {
 		return rune(i + 65)
 	}
 
-	i -= 25
-
-	if i+48 <= 57 {
-		return rune(i + 48)
-	}
-
-	if i+48 == 58 {
-		return rune(i + 38)
+	// 1-9
+	if i -= 26; i+49 <= 57 {
+		return rune(i + 49)
 	}
 
 	return 0
