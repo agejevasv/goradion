@@ -80,7 +80,10 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Rainwave Chiptune,https://rainwave.cc/tune_in/4.mp3.m3u,Game Soundtrack
 	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Game Soundtrack
 	freeCodeCamp: Code Radio,https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3,Chillhop;Lofi;Downtempo
-	BOX: Lofi Radio,https://play.streamafrica.net/lofiradio,Chillhop;Lofi;Downtempo`
+	BOX: Lofi Radio,https://play.streamafrica.net/lofiradio,Chillhop;Lofi;Downtempo
+	SomaFM: Christmas Lounge,https://somafm.com/christmas256.pls,Xmas;Lounge
+	ChristmasFM: Classics,https://christmasfm.cdnstream1.com/2550_128.mp3,Xmas;Oldies
+	Radio Santa Claus,https://streaming.radiostreamlive.com/radiosantaclaus_devices,Xmas`
 
 type Station struct {
 	title string
