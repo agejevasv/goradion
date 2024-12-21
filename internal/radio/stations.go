@@ -19,7 +19,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	SomaFM: Cliqhop IDM,https://somafm.com/cliqhop256.pls,Electronic
 	SomaFM: Illinois Street Lounge,http://somafm.com/illstreet.pls,Oldies;Lounge
 	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls,Electronic
-	SomaFM: Department Store Christmas,https://somafm.com/nossl/deptstore256.pls,Xmas,Lounge
+	SomaFM: Department Store Christmas,https://somafm.com/nossl/deptstore256.pls,Xmas;Lounge
 	SomaFM: Tiki Time,https://somafm.com/nossl/tikitime256.pls,Lounge;Oldies
 	SomaFM: Synphaera,https://somafm.com/nossl/synphaera256.pls,Ambient;Electronic
 	SomaFM: Drone Zone,https://somafm.com/dronezone256.pls,Ambient
@@ -37,13 +37,18 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	9128live,https://streams.radio.co/s0aa1e6f4a/listen,Electronic;Ambient
 	Chillsky,https://lfhh.radioca.st/stream,Chillhop;Downtempo
 	Nightride,https://stream.nightride.fm/nightride.ogg,Electronic
-	Jungletrain.net,http://stream1.jungletrain.net:8000,Electronic
+	Jungletrain.net,http://stream1.jungletrain.net:8000,Electronic;Jungle
+	Futuredrumz,https://orion.shoutca.st/tunein/futuredr.pls,Electronic;Jungle
+	RinseFM,https://admin.stream.rinse.fm/proxy/rinse_uk/stream,Electronic
+	Bassdrive,https://www.bassdrive.com/bassdrive3.m3u,Jungle
 	Deepinside Radio Show,https://n44a-eu.rcs.revma.com/uyrbt6xuhnruv,House;Electronic
 	Deepinside Guest Sessions,https://n30a-eu.rcs.revma.com/u62vcepz3tzuv,House;Electronic
+	Deep Vibes Radio,http://88.208.218.19:9106/listen.pls,House;Electronic
+	Dogglounge,https://dogglounge.com/listen.pls,House;Electronic
 	Deep Motion FM,https://vm.motionfm.com/motionone_free,House;Electronic
 	Lounge Motion FM,https://vm.motionfm.com/motionthree_free,Downtempo;Lounge
 	Smooth Motion FM,https://vm.motionfm.com/motiontwo_free,Soul;Lounge
-	Magic Radio,http://mp3.magic-radio.net/,80s
+	Magic Radio,http://mp3.magic-radio.net/,80s;Pop
 	Jammin Vibez Radio,https://azuracast.jammimvibez.com/listen/classics/stream,Reggae
 	Classic Rock Florida,https://vip2.fastcast4u.com/proxy/classicrockdoug?mp=/1,Rock
 	Classic Vinyl,http://icecast.walmradio.com:8000/classic,Jazz;Oldies;Jazz
@@ -53,7 +58,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Linn Radio, http://radio.linn.co.uk:8003/autodj,Eclectic
 	Linn Jazz,http://radio.linn.co.uk:8000/autodj,Jazz;Instrumental
 	Linn Classical,http://radio.linn.co.uk:8004/autodj,Classical;Instrumental
-	Mother Earth Radio,https://motherearth.streamserver24.com/listen/motherearth/motherearth.aac,Eclectic
+	Mother Earth Radio,https://motherearth.streamserver24.com/listen/motherearth/motherearth.aac,Eclectic;Pop
 	Mother Earth Jazz,https://motherearth.streamserver24.com/listen/motherearth_jazz/motherearth.jazz.mp4,Jazz;Instrumental
 	Mother Earth Instrumental,https://motherearth.streamserver24.com/listen/motherearth_instrumental/motherearth.instrumental.aac,Instrumental
 	Mother Earth Klassic,https://motherearth.streamserver24.com:18910/motherearth.klassik.aac,Classical;Instrumental
@@ -66,26 +71,26 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	FluxFM: Yoga Sounds,https://streams.fluxfm.de/yogasounds/mp3-320/streams.fluxfm.de/play.pls,Ambient
 	FluxFM: HipHop Classics,https://streams.fluxfm.de/boomfmclassics/mp3-320/streams.fluxfm.de/play.pls,HipHop;Downtempo
 	FluxFM: 60s,https://streams.fluxfm.de/60er/mp3-320/streams.fluxfm.de/play.pls,Oldies;Rock
-	FluxFM: 80s,https://streams.fluxfm.de/80er/mp3-320/streams.fluxfm.de/play.pls,80s
-	FluxFM: Finest,https://streams.fluxfm.de/fluxkompensator/mp3-320/streams.fluxfm.de/play.pls,Eclectic
+	FluxFM: 80s,https://streams.fluxfm.de/80er/mp3-320/streams.fluxfm.de/play.pls,80s;Pop
+	FluxFM: Finest,https://streams.fluxfm.de/fluxkompensator/mp3-320/streams.fluxfm.de/play.pls,Eclectic;Pop
 	FluxFM: Berlin Beach House,https://streams.fluxfm.de/bbeachhouse/mp3-320/streams.fluxfm.de/play.pls,House;Electronic
 	FluxFM: NeoFM,https://streams.fluxfm.de/neofm/mp3-320/streams.fluxfm.de/play.pls,Electronic
 	Naim Radio,http://mscp3.live-streams.nl:8360/high.aac,Eclectic
 	Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-high.aac,Jazz
 	Naim Classical,http://mscp3.live-streams.nl:8250/class-high.aac,Classical;Instrumental
-	Radio Paradise,http://stream.radioparadise.com/aac-320,Eclectic
+	Radio Paradise,http://stream.radioparadise.com/aac-320,Eclectic;Pop
 	Radio Paradise Mellow,http://stream.radioparadise.com/mellow-320,Ballads;Eclectic
 	Radio Paradise Rock,http://stream.radioparadise.com/rock-320,Rock
-	HiRes: JB Radio2,https://maggie.torontocast.com:8076/flac,Rock;Eclectic;HiRes
-	HiRes: SuperStereo 1: Yacht Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes1,Rock;HiRes
-	HiRes: SuperStereo 2: 50s 60s 70s,http://icecast.centaury.cl:7570/SuperStereoHiRes2,Oldies;Eclectic;HiRes
-	HiRes: SuperStereo 3: 80s,http://icecast.centaury.cl:7570/SuperStereoHiRes3,80s;HiRes
-	HiRes: SuperStereo 4: Ballads 80s 90s 00s,http://icecast.centaury.cl:7570/SuperStereoHiRes4,Ballads;HiRes
-	HiRes: SuperStereo 5: Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes5,Rock;HiRes
-	HiRes: SuperStereo 6: Instrumental Music,http://icecast.centaury.cl:7570/SuperStereoHiRes6,Instrumental;HiRes
-	HiRes: SuperStereo 7: Jazz,http://icecast.centaury.cl:7570/SuperStereoHiRes7,Jazz;Instrumental;HiRes
-	HiRes: MaXXima,http://maxxima.mine.nu:8000/maxx.ogg,House;Electronic;HiRes
-	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House;HiRes
+	HiRes: JB Radio2,https://maggie.torontocast.com:8076/flac,Rock;Eclectic;Hi-Res
+	HiRes: SuperStereo 1: Yacht Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes1,Rock;Pop;Hi-Res
+	HiRes: SuperStereo 2: 50s 60s 70s,http://icecast.centaury.cl:7570/SuperStereoHiRes2,Oldies;Eclectic;Hi-Res
+	HiRes: SuperStereo 3: 80s,http://icecast.centaury.cl:7570/SuperStereoHiRes3,80s;Pop;Hi-Res
+	HiRes: SuperStereo 4: Ballads 80s 90s 00s,http://icecast.centaury.cl:7570/SuperStereoHiRes4,Ballads;Hi-Res
+	HiRes: SuperStereo 5: Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes5,Rock;Hi-Res
+	HiRes: SuperStereo 6: Instrumental Music,http://icecast.centaury.cl:7570/SuperStereoHiRes6,Instrumental;Hi-Res
+	HiRes: SuperStereo 7: Jazz,http://icecast.centaury.cl:7570/SuperStereoHiRes7,Jazz;Instrumental;Hi-Res
+	HiRes: MaXXima,http://maxxima.mine.nu:8000/maxx.ogg,House;Electronic;Hi-Res
+	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House;Hi-Res
 	Rainwave Game,https://rainwave.cc/tune_in/1.mp3.m3u,Game Soundtrack
 	Rainwave OC Remix,https://rainwave.cc/tune_in/2.mp3.m3u,Game Soundtrack
 	Rainwave Cover,https://rainwave.cc/tune_in/3.mp3.m3u,Game Soundtrack
@@ -96,10 +101,30 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Radio Santa Claus,https://streaming.radiostreamlive.com/radiosantaclaus_devices,Xmas
 	Radio Swiss Classic,http://stream.srg-ssr.ch/m/rsc_fr/mp3_128,Classical;Instrumental
 	Radio Swiss Jazz,http://stream.srg-ssr.ch/m/rsj/mp3_128,Jazz;Instrumental
+	Radio Swiss Pop,https://stream.srg-ssr.ch/m/rsp/mp3_128,Eclectic;Pop
 	HiOnLine: Classic,https://mediaserv30.live-streams.nl:18088,Classical;Instrumental
 	HiOnLine: Lounge,https://mediaserv33.live-streams.nl:18036,Lounge;Downtempo
 	HiOnLine: Jazz,https://mediaserv38.live-streams.nl:18006,Jazz
-	HiOnLine: Gold,https://mediaserv30.live-streams.nl:18000,Rock;Oldies`
+	HiOnLine: Gold,https://mediaserv30.live-streams.nl:18000,Rock;Oldies
+	HiOnLine: Pop,http://mediaserv30.live-streams.nl:2199/tunein/hionline.pls,Pop
+	HiOnLine: World,http://mediaserv38.live-streams.nl:2199/tunein/onlineworldradio.pls,Pop
+	KCRW Eclectic24,https://streams.kcrw.com/e24_mp3,Eclectic;Pop
+	Litt: Rock X,https://ice55.securenetsystems.net/DASH38,Rock
+	Litt: Monsters Of Rock,https://ice55.securenetsystems.net/DASH14,Rock
+	Litt: Yacht Rock,https://ice55.securenetsystems.net/DASH41,Pop;Rock;Soul
+	Litt: The Strip,https://ice55.securenetsystems.net/DASH29,Rock
+	Litt: Disco Fever,https://ice55.securenetsystems.net/DASH20,Disco
+	Litt: 60s,https://ice55.securenetsystems.net/DASH34,Pop;Oldies
+	Litt: 70s,https://ice55.securenetsystems.net/DASH26,Pop;Oldies
+	Litt: 90s,https://ice55.securenetsystems.net/DASH42,Pop
+	Litt: 00s,https://ice55.securenetsystems.net/DASH19,Pop
+	Litt: 10s+,https://ice55.securenetsystems.net/DASH52,Pop
+	Litt: Smooth Jazz Hits,https://ice55.securenetsystems.net/DASH44,Jazz;Lounge
+	Litt: Hip-Hop X,https://ice55.securenetsystems.net/DASH90,HipHop
+	Litt: Boomerang,https://ice55.securenetsystems.net/DASH39,Pop;R&B
+	Litt: R&B X,https://ice55.securenetsystems.net/DASH47,Pop;R&B
+	Litt: Hits X,https://ice55.securenetsystems.net/DASH48,Pop
+	Litt: Pop X,https://ice55.securenetsystems.net/DASH17,Pop`
 
 type Station struct {
 	title string
