@@ -39,10 +39,10 @@ goradion-<version>
 ```
 
 ## Stations
-The stations are configured using a CSV file with a titile, URL and optional, semicolon `;` separated tag(s), e.g.:
+The stations are configured using a CSV file with a titile, URL and semicolon `;` separated tag(s), e.g.:
 
 ```csv
-Title,URL[,tag_1;...;tag_n]
+Title,URL,tag_1[;...;tag_n]
 ...
 ```
 Stations file can be passed with `-s` argument; goradion supports both local files and HTTP URLs, e.g.:
@@ -52,38 +52,4 @@ goradion -s /path/to/stations.csv
 OR
 
 goradion -s https://path-to/stations.csv
-```
-## Keyboard Control
-```
-Keyboard Control
-
-  *
-    Toggle playing a random station.
-
-  /
-    Show tag selection screen.
-
-  #
-    Clear selected tag.
-
-  a-z and A-Z
-    Toggle playing a station marked with a given letter.
-
-  Enter and Space
-    Toggle playing currently selected station.
-
-  Left and Right, - and +
-    Change the volume in increments of 5.
-
-  Up and Down
-    Cycle through the radio station list.
-
-  PgUp and PgDown
-    Jump to a beginning/end of a station list.
-
-  Esc
-    Close current window.
-
-  ?
-    Show help screen.
 ```
