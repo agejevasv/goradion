@@ -15,11 +15,8 @@ const helpString = `Keyboard Control
 	[green]*[default]
 		Toggle playing a random station.
 
-	[green]/[default]
+	[green]#[default] or [green]/[default]
 		Show tag selection screen.
-
-	[green]#[default]
-		Clear selected tag.
 
 	[green]a[default]-[green]z[default] and [green]A[default]-[green]Z[default]
 		Toggle playing a station marked with a given letter.
@@ -109,14 +106,19 @@ func (a *Application) setupPages() {
 			AddItem(a.stationsList, 0, 100, true).
 			AddItem(statusFlex, 0, 1, true), 0, 1, true)
 
+	tagsFlex := tview.NewFlex().
+		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+			AddItem(a.setupTagsList(), 0, 100, true).
+			AddItem(statusFlex, 0, 1, true), 0, 1, true)
+
 	help := tview.NewTextView().
 		SetDynamicColors(true).
 		SetText(fmt.Sprintf("[green]%s\n\n[default]%s", VersionString(), helpString))
 	help.SetBackgroundColor(tcell.ColorDefault)
 
 	a.pages = tview.NewPages().
-		AddPage(a.pageNames[Main], flex, true, true).
-		AddPage(a.pageNames[Tags], a.setupTagsList(), true, false).
+		AddPage(a.pageNames[Tags], tagsFlex, true, true).
+		AddPage(a.pageNames[Main], flex, true, false).
 		AddPage(a.pageNames[Help], help, true, false)
 }
 
@@ -126,7 +128,7 @@ func (a *Application) show(page Page) {
 
 func (a *Application) toggle(page Page) {
 	if a.pages.GetPageNames(true)[0] == a.pageNames[page] {
-		a.show(Main)
+		a.show(Tags)
 	} else {
 		a.show(page)
 	}
@@ -136,12 +138,8 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 	return func(event *tcell.EventKey) *tcell.EventKey {
 		switch key := event.Key(); key {
 		case tcell.KeyEscape:
-			if a.pages.GetPageNames(true)[0] != a.pageNames[Main] {
-				a.show(Main)
-				return nil
-			} else if a.pages.GetPageNames(true)[0] == a.pageNames[Main] && a.tag != "" {
-				a.tag = ""
-				a.setupStationsList(a.stationsList, a.stations)
+			if a.pages.GetPageNames(true)[0] != a.pageNames[Tags] {
+				a.show(Tags)
 				return nil
 			} else {
 				a.app.Stop()
@@ -160,8 +158,8 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			case '-', '_':
 				a.player.VolumeDn()
 				return nil
-			case '/':
-				a.toggle(Tags)
+			case '/', '#':
+				a.show(Tags)
 				return nil
 			case '?':
 				a.toggle(Help)
@@ -199,9 +197,8 @@ func (a *Application) setupStationsList(list *tview.List, stations []Station) *t
 	skip := 1
 
 	if a.tag != "" {
-		list = list.AddItem(fmt.Sprintf("[red:black:]%s[-:-:-] [Clear Tag]", a.tag), "", rune('#'), func() {
-			a.tag = ""
-			a.setupStationsList(a.stationsList, a.stations)
+		list = list.AddItem(fmt.Sprintf("[red:black:]%s", a.tag), "", rune('#'), func() {
+			a.show(Tags)
 		})
 		skip++
 	}
@@ -238,19 +235,7 @@ func (a *Application) setupTagsList() *tview.List {
 	for i := 0; i < len(tags); i++ {
 		tagsList = tagsList.AddItem(tags[i], "", idxToRune(i), func() {
 			a.tag = tags[i]
-
-			match := make([]Station, 0)
-
-			for i := 0; i < len(a.stations); i++ {
-				for _, t := range a.stations[i].tags {
-					if t == a.tag {
-						match = append(match, a.stations[i])
-						break
-					}
-				}
-			}
-
-			a.setupStationsList(a.stationsList, match)
+			a.filterStationsForSelectedTag()
 			a.show(Main)
 		})
 	}
@@ -262,6 +247,20 @@ func (a *Application) setupTagsList() *tview.List {
 	}
 
 	return tagsList
+}
+
+func (a *Application) filterStationsForSelectedTag() {
+	match := make([]Station, 0)
+
+	for i := 0; i < len(a.stations); i++ {
+		for _, t := range a.stations[i].tags {
+			if t == a.tag {
+				match = append(match, a.stations[i])
+				break
+			}
+		}
+	}
+	a.setupStationsList(a.stationsList, match)
 }
 
 func newList() *tview.List {
