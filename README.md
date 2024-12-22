@@ -1,8 +1,9 @@
 # goradion
 Goradion is a command line radio player based on `mpv`.
 <p align="center">
-  <img width="777" alt="goradion" src="https://github.com/agejevasv/goradion/assets/1682086/dff2d402-76dc-4212-a1ef-86e2fad2ff73">
+  <img alt="goradion" src="https://github.com/user-attachments/assets/1a86f861-10ed-4ad5-b90e-f48c4278c317">
 </p>
+
 
 ## Setup
 
