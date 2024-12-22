@@ -19,7 +19,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	SomaFM: Cliqhop IDM,https://somafm.com/cliqhop256.pls,Electronic
 	SomaFM: Illinois Street Lounge,http://somafm.com/illstreet.pls,Oldies;Lounge
 	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls,Electronic
-	SomaFM: Department Store Christmas,https://somafm.com/nossl/deptstore256.pls,Xmas;Lounge
+	SomaFM: Department Store Christmas,https://somafm.com/nossl/deptstore256.pls,Xmas
 	SomaFM: Tiki Time,https://somafm.com/nossl/tikitime256.pls,Lounge;Oldies
 	SomaFM: Synphaera,https://somafm.com/nossl/synphaera256.pls,Ambient;Electronic
 	SomaFM: Drone Zone,https://somafm.com/dronezone256.pls,Ambient
@@ -33,14 +33,19 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	SomaFM: Space Station,https://somafm.com/nossl/spacestation.pls,Ambient
 	SomaFM: Heavyweight Reggae,https://somafm.com/nossl/reggae256.pls,Reggae
 	SomaFM: Doomed,https://somafm.com/nossl/doomed256.pls,Ambient
-	SomaFM: Christmas Lounge,https://somafm.com/christmas256.pls,Xmas;Lounge
+	SomaFM: Metal Detector,https://somafm.com/nossl/metal.pls,Metal
+	SomaFM: Christmas Lounge,https://somafm.com/christmas256.pls,Xmas
 	9128live,https://streams.radio.co/s0aa1e6f4a/listen,Electronic;Ambient
 	Chillsky,https://lfhh.radioca.st/stream,Chillhop;Downtempo
 	Nightride,https://stream.nightride.fm/nightride.ogg,Electronic
 	Jungletrain.net,http://stream1.jungletrain.net:8000,Electronic;Jungle
 	Futuredrumz,https://orion.shoutca.st/tunein/futuredr.pls,Electronic;Jungle
+	Bassdrive,http://ice.bassdrive.net/stream,Electronic;Jungle
+	DNBRadio,https://azura.drmnbss.org:8000/radio.mp3,Electronic;Jungle
+	Plushrecs Atmospheric,https://azrelay.drmnbss.org/listen/plushrecs/radio.mp3,Electronic;Jungle
+	Section8Recs,https://azura.drmnbss.org:8020/radio.mp3,Electronic;Jungle
+	KoolFM,https://admin.stream.rinse.fm/proxy/kool/stream,Electronic;Jungle
 	RinseFM,https://admin.stream.rinse.fm/proxy/rinse_uk/stream,Electronic
-	Bassdrive,https://www.bassdrive.com/bassdrive3.m3u,Jungle
 	Deepinside Radio Show,https://n44a-eu.rcs.revma.com/uyrbt6xuhnruv,House;Electronic
 	Deepinside Guest Sessions,https://n30a-eu.rcs.revma.com/u62vcepz3tzuv,House;Electronic
 	Deep Vibes Radio,http://88.208.218.19:9106/listen.pls,House;Electronic
@@ -79,25 +84,25 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-high.aac,Jazz
 	Naim Classical,http://mscp3.live-streams.nl:8250/class-high.aac,Classical;Instrumental
 	Radio Paradise,http://stream.radioparadise.com/aac-320,Eclectic;Pop
-	Radio Paradise Mellow,http://stream.radioparadise.com/mellow-320,Ballads;Eclectic
+	Radio Paradise Mellow,http://stream.radioparadise.com/mellow-320,Pop;Eclectic
 	Radio Paradise Rock,http://stream.radioparadise.com/rock-320,Rock
 	HiRes: JB Radio2,https://maggie.torontocast.com:8076/flac,Rock;Eclectic;Hi-Res
 	HiRes: SuperStereo 1: Yacht Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes1,Rock;Pop;Hi-Res
 	HiRes: SuperStereo 2: 50s 60s 70s,http://icecast.centaury.cl:7570/SuperStereoHiRes2,Oldies;Eclectic;Hi-Res
 	HiRes: SuperStereo 3: 80s,http://icecast.centaury.cl:7570/SuperStereoHiRes3,80s;Pop;Hi-Res
-	HiRes: SuperStereo 4: Ballads 80s 90s 00s,http://icecast.centaury.cl:7570/SuperStereoHiRes4,Ballads;Hi-Res
+	HiRes: SuperStereo 4: Ballads 80s 90s 00s,http://icecast.centaury.cl:7570/SuperStereoHiRes4,Pop;Eclectic;Hi-Res
 	HiRes: SuperStereo 5: Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes5,Rock;Hi-Res
 	HiRes: SuperStereo 6: Instrumental Music,http://icecast.centaury.cl:7570/SuperStereoHiRes6,Instrumental;Hi-Res
 	HiRes: SuperStereo 7: Jazz,http://icecast.centaury.cl:7570/SuperStereoHiRes7,Jazz;Instrumental;Hi-Res
 	HiRes: MaXXima,http://maxxima.mine.nu:8000/maxx.ogg,House;Electronic;Hi-Res
 	HiRes: Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House;Hi-Res
-	Rainwave Game,https://rainwave.cc/tune_in/1.mp3.m3u,Game Soundtrack
-	Rainwave OC Remix,https://rainwave.cc/tune_in/2.mp3.m3u,Game Soundtrack
-	Rainwave Cover,https://rainwave.cc/tune_in/3.mp3.m3u,Game Soundtrack
-	Rainwave Chiptune,https://rainwave.cc/tune_in/4.mp3.m3u,Game Soundtrack
-	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Game Soundtrack
+	Rainwave Game,https://rainwave.cc/tune_in/1.mp3.m3u,Soundtrack
+	Rainwave OC Remix,https://rainwave.cc/tune_in/2.mp3.m3u,Soundtrack
+	Rainwave Cover,https://rainwave.cc/tune_in/3.mp3.m3u,Soundtrack
+	Rainwave Chiptune,https://rainwave.cc/tune_in/4.mp3.m3u,Soundtrack
+	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Soundtrack
 	freeCodeCamp: Code Radio,https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3,Chillhop;Downtempo
-	ChristmasFM: Classics,https://christmasfm.cdnstream1.com/2550_128.mp3,Xmas;Oldies
+	ChristmasFM: Classics,https://christmasfm.cdnstream1.com/2550_128.mp3,Xmas
 	Radio Santa Claus,https://streaming.radiostreamlive.com/radiosantaclaus_devices,Xmas
 	Radio Swiss Classic,http://stream.srg-ssr.ch/m/rsc_fr/mp3_128,Classical;Instrumental
 	Radio Swiss Jazz,http://stream.srg-ssr.ch/m/rsj/mp3_128,Jazz;Instrumental
@@ -116,6 +121,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Litt: Disco Fever,https://ice55.securenetsystems.net/DASH20,Disco
 	Litt: 60s,https://ice55.securenetsystems.net/DASH34,Pop;Oldies
 	Litt: 70s,https://ice55.securenetsystems.net/DASH26,Pop;Oldies
+	Litt: 80s,https://ice55.securenetsystems.net/DASH46,Pop;80s
 	Litt: 90s,https://ice55.securenetsystems.net/DASH42,Pop
 	Litt: 00s,https://ice55.securenetsystems.net/DASH19,Pop
 	Litt: 10s+,https://ice55.securenetsystems.net/DASH52,Pop
@@ -124,7 +130,18 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Litt: Boomerang,https://ice55.securenetsystems.net/DASH39,Pop;R&B
 	Litt: R&B X,https://ice55.securenetsystems.net/DASH47,Pop;R&B
 	Litt: Hits X,https://ice55.securenetsystems.net/DASH48,Pop
-	Litt: Pop X,https://ice55.securenetsystems.net/DASH17,Pop`
+	Litt: Pop X,https://ice55.securenetsystems.net/DASH17,Pop
+	Aardvark Blues FM,http://streaming.live365.com/b77280_128mp3,Blues
+	Houston Blues Radio,http://streaming.live365.com/b76353_128mp3,Blues
+	Blues Radio,https://i4.streams.ovh/sc/bluesrad/stream,Blues
+	DeathFM,http://hi5.death.fm,Metal
+	1980sFM,http://hi5.1980s.fm,80s;Pop
+	StreamingSoundtracks,http://hi5.streamingsoundtracks.com,Soundtrack
+	Entranced,http://hi5.entranced.fm,Lounge;Electronic
+	AdagioFm,http://hi5.adagio.fm,Classical;Instrumental
+	Rock Radio 1,http://144.217.77.176:8000/listen.pls,Rock;Metal
+	VFR: 80s Thrash,https://tuneintoradio1.com:8010/radio.mp3,Metal
+	VFR: Thrash,https://tuneintoradio1.com:8000/radio.mp3,Metal`
 
 type Station struct {
 	title string
