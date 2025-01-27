@@ -36,7 +36,6 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	SomaFM: Metal Detector,https://somafm.com/nossl/metal.pls,Metal
 	SomaFM: Christmas Lounge,https://somafm.com/christmas256.pls,Xmas
 	9128live,https://streams.radio.co/s0aa1e6f4a/listen,Electronic;Ambient
-	Chillsky,https://lfhh.radioca.st/stream,Chillhop;Downtempo
 	Nightride,https://stream.nightride.fm/nightride.ogg,Electronic
 	Jungletrain.net,http://stream1.jungletrain.net:8000,Electronic;Jungle
 	Futuredrumz,https://orion.shoutca.st/tunein/futuredr.pls,Electronic;Jungle
@@ -86,7 +85,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Radio Paradise,http://stream.radioparadise.com/aac-320,Eclectic;Pop
 	Radio Paradise Mellow,http://stream.radioparadise.com/mellow-320,Pop;Eclectic
 	Radio Paradise Rock,http://stream.radioparadise.com/rock-320,Rock
-	HiRes: JB Radio2,https://maggie.torontocast.com:8076/flac,Rock;Eclectic;Hi-Res
+	HiRes: JB Radio2,http://161.97.135.80:8001/flac,Rock;Eclectic;Hi-Res
 	HiRes: SuperStereo 1: Yacht Rock,http://icecast.centaury.cl:7570/SuperStereoHiRes1,Rock;Pop;Hi-Res
 	HiRes: SuperStereo 2: 50s 60s 70s,http://icecast.centaury.cl:7570/SuperStereoHiRes2,Oldies;Eclectic;Hi-Res
 	HiRes: SuperStereo 3: 80s,http://icecast.centaury.cl:7570/SuperStereoHiRes3,80s;Pop;Hi-Res
