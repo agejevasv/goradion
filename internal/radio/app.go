@@ -18,8 +18,11 @@ const helpString = `Keyboard Control
 	[green]#[default] or [green]/[default]
 		Show tag selection screen.
 
+	[green]~[default]
+		Show all stations (ignore tags).
+
 	[green]a[default]-[green]z[default] and [green]A[default]-[green]Z[default]
-		Toggle playing a station marked with a given letter.
+		Toggle playing a station marked with a given letter (or select a tag).
 
 	[green]Enter[default] and [green]Space[default]
 		Toggle playing currently selected station.
@@ -164,6 +167,11 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			case '?':
 				a.toggle(Help)
 				return nil
+			case '~':
+				a.tag = "All Stations"
+				a.filterStationsForSelectedTag()
+				a.show(Main)
+				return nil
 			}
 		}
 		return event
@@ -254,7 +262,7 @@ func (a *Application) filterStationsForSelectedTag() {
 
 	for i := 0; i < len(a.stations); i++ {
 		for _, t := range a.stations[i].tags {
-			if t == a.tag {
+			if a.tag == "All Stations" || t == a.tag {
 				match = append(match, a.stations[i])
 				break
 			}

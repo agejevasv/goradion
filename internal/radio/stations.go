@@ -125,7 +125,7 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	Litt: 00s,https://ice55.securenetsystems.net/DASH19,Pop
 	Litt: 10s+,https://ice55.securenetsystems.net/DASH52,Pop
 	Litt: Smooth Jazz Hits,https://ice55.securenetsystems.net/DASH44,Jazz;Lounge
-	Litt: Hip-Hop X,https://ice55.securenetsystems.net/DASH90,HipHop
+	Litt: Hip-Hop X,https://ice65.securenetsystems.net/DASH5,HipHop
 	Litt: Boomerang,https://ice55.securenetsystems.net/DASH39,Pop;R&B
 	Litt: R&B X,https://ice55.securenetsystems.net/DASH47,Pop;R&B
 	Litt: Hits X,https://ice55.securenetsystems.net/DASH48,Pop
