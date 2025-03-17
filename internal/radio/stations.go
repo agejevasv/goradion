@@ -113,23 +113,23 @@ const defaultStationsCSV = `SomaFM: Secret Agent,https://somafm.com/secretagent1
 	HiOnLine: Pop,http://mediaserv30.live-streams.nl:2199/tunein/hionline.pls,Pop
 	HiOnLine: World,http://mediaserv38.live-streams.nl:2199/tunein/onlineworldradio.pls,Pop
 	KCRW Eclectic24,https://streams.kcrw.com/e24_mp3,Eclectic;Pop
-	Litt: Rock X,https://ice55.securenetsystems.net/DASH38,Rock
-	Litt: Monsters Of Rock,https://ice55.securenetsystems.net/DASH14,Rock
-	Litt: Yacht Rock,https://ice55.securenetsystems.net/DASH41,Pop;Rock;Soul
-	Litt: The Strip,https://ice55.securenetsystems.net/DASH29,Rock
-	Litt: Disco Fever,https://ice55.securenetsystems.net/DASH20,Disco
-	Litt: 60s,https://ice55.securenetsystems.net/DASH34,Pop;Oldies
-	Litt: 70s,https://ice55.securenetsystems.net/DASH26,Pop;Oldies
-	Litt: 80s,https://ice55.securenetsystems.net/DASH46,Pop;80s
-	Litt: 90s,https://ice55.securenetsystems.net/DASH42,Pop
-	Litt: 00s,https://ice55.securenetsystems.net/DASH19,Pop
-	Litt: 10s+,https://ice55.securenetsystems.net/DASH52,Pop
-	Litt: Smooth Jazz Hits,https://ice55.securenetsystems.net/DASH44,Jazz;Lounge
-	Litt: Hip-Hop X,https://ice65.securenetsystems.net/DASH5,HipHop
-	Litt: Boomerang,https://ice55.securenetsystems.net/DASH39,Pop;R&B
-	Litt: R&B X,https://ice55.securenetsystems.net/DASH47,Pop;R&B
-	Litt: Hits X,https://ice55.securenetsystems.net/DASH48,Pop
-	Litt: Pop X,https://ice55.securenetsystems.net/DASH17,Pop
+	Litt: Rock X,https://das-sa39.cdnstream1.com/5591_128,Rock
+	Litt: Monsters Of Rock,https://das-sa39.cdnstream1.com/5583_128,Rock
+	Litt: Yacht Rock,https://das-sa39.cdnstream1.com/5605_128,Pop;Rock;Soul
+	Litt: The Strip,https://das-sa39.cdnstream1.com/5602_128,Rock
+	Litt: Disco Fever,https://das-sa39.cdnstream1.com/5566_128,Disco
+	Litt: 60s,https://das-sa39.cdnstream1.com/5557_128,Pop;Oldies
+	Litt: 70s,https://das-sa39.cdnstream1.com/5558_128,Pop;Oldies
+	Litt: 80s,https://das-sa39.cdnstream1.com/5559_128,Pop;80s
+	Litt: 90s,https://das-sa39.cdnstream1.com/5560_128,Pop
+	Litt: 00s,https://das-sa39.cdnstream1.com/5604_128,Pop
+	Litt: 10s+,https://das-sa39.cdnstream1.com/5555_128,Pop
+	Litt: Smooth Jazz Hits,https://das-sa39.cdnstream1.com/5594_128,Jazz;Lounge
+	Litt: Hip-Hop X,https://das-sa39.cdnstream1.com/5571_128,HipHop
+	Litt: Boomerang,https://das-sa39.cdnstream1.com/5562_128,Pop;R&B
+	Litt: R&B X,https://das-sa39.cdnstream1.com/5589_128,Pop;R&B
+	Litt: Hits X,https://das-sa39.cdnstream1.com/5572_128,Pop
+	Litt: Pop X,https://das-sa39.cdnstream1.com/5587_128,Pop
 	Aardvark Blues FM,http://streaming.live365.com/b77280_128mp3,Blues
 	Houston Blues Radio,http://streaming.live365.com/b76353_128mp3,Blues
 	Blues Radio,https://i4.streams.ovh/sc/bluesrad/stream,Blues
