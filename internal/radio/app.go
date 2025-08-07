@@ -10,7 +10,9 @@ import (
 	"github.com/rivo/tview"
 )
 
-const helpString = `Keyboard Control
+const (
+	favoritesTag = "Favorites"
+	helpString   = `Keyboard Control
 
 	[green]*[default]
 		Toggle playing a random station.
@@ -41,6 +43,7 @@ const helpString = `Keyboard Control
 
 	[green]?[default]
 		Show help screen.`
+)
 
 type Page int
 
@@ -61,6 +64,7 @@ type Application struct {
 	tagsList     *tview.List
 	status       *tview.TextView
 	volume       *tview.TextView
+	favorites    *Favorites
 }
 
 func NewApp(player *Player, stations []Station) *Application {
@@ -68,6 +72,7 @@ func NewApp(player *Player, stations []Station) *Application {
 		player:    player,
 		stations:  stations,
 		pageNames: []string{"Main", "Help", "Tags"},
+		favorites: NewFavorites(stations),
 	}
 
 	a.setupPages()
@@ -219,12 +224,12 @@ func (a *Application) setupStationsList(list *tview.List, stations []Station) *t
 		}
 
 		list.SetCurrentItem(r + skip)
-		go a.player.Toggle(stations[r])
+		go a.togglePlay(stations[r])
 	})
 
 	for i := 0; i < len(stations); i++ {
 		list = list.AddItem(stations[i].title, "", idxToRune(i), func() {
-			go a.player.Toggle(stations[i])
+			go a.togglePlay(stations[i])
 		})
 
 		if a.player.info.Url == stations[i].url {
@@ -240,6 +245,14 @@ func (a *Application) setupTagsList() *tview.List {
 
 	tags := tags(a.stations)
 
+	if a.favorites.hasFavorites() {
+		tagsList = tagsList.AddItem(favoritesTag, "", rune('$'), func() {
+			a.tag = favoritesTag
+			a.filterStationsForSelectedTag()
+			a.show(Main)
+		})
+	}
+
 	for i := 0; i < len(tags); i++ {
 		tagsList = tagsList.AddItem(tags[i], "", idxToRune(i), func() {
 			a.tag = tags[i]
@@ -248,7 +261,7 @@ func (a *Application) setupTagsList() *tview.List {
 		})
 	}
 
-	if len(tags) == 0 {
+	if len(tags) == 0 && !a.favorites.hasFavorites() {
 		tagsList = tagsList.AddItem("No tags were found", "", rune('#'), func() {
 			a.show(Main)
 		})
@@ -257,14 +270,25 @@ func (a *Application) setupTagsList() *tview.List {
 	return tagsList
 }
 
+func (a *Application) togglePlay(station Station) {
+	if station.url != "" && station.url != a.player.info.Url {
+		a.favorites.track(station)
+	}
+	a.player.Toggle(station)
+}
+
 func (a *Application) filterStationsForSelectedTag() {
 	match := make([]Station, 0)
 
-	for i := 0; i < len(a.stations); i++ {
-		for _, t := range a.stations[i].tags {
-			if a.tag == "All Stations" || t == a.tag {
-				match = append(match, a.stations[i])
-				break
+	if a.tag == favoritesTag {
+		match = a.favorites.getFavoriteStations(1)
+	} else {
+		for i := 0; i < len(a.stations); i++ {
+			for _, t := range a.stations[i].tags {
+				if a.tag == "All Stations" || t == a.tag {
+					match = append(match, a.stations[i])
+					break
+				}
 			}
 		}
 	}
