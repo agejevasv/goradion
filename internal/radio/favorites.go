@@ -2,12 +2,16 @@ package radio
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"time"
 )
+
+const minPlays = 1
+const maxFavs = int('z' - 'a' + 1)
 
 func getFavoritesFile() string {
 	home, err := os.UserHomeDir()
@@ -18,6 +22,8 @@ func getFavoritesFile() string {
 	var configDir string
 	if runtime.GOOS == "windows" {
 		configDir = filepath.Join(home, "AppData", "Roaming", "goradion")
+	} else if runtime.GOOS == "darwin" {
+		configDir = filepath.Join(home, "Library", "Application Support", "goradion")
 	} else {
 		configDir = filepath.Join(home, ".config", "goradion")
 	}
@@ -86,14 +92,14 @@ func (f *Favorites) track(station Station) {
 	f.save()
 }
 
-func (f *Favorites) getFavoriteStations(minPlayCount int) []Station {
+func (f *Favorites) getFavoriteStations() []Station {
 	if len(f.Stations) == 0 {
 		return nil
 	}
 
 	var favStations []*FavoriteStation
 	for _, fav := range f.Stations {
-		if fav.PlayCount >= minPlayCount && f.availableStations[fav.URL] {
+		if fav.PlayCount >= minPlays && f.availableStations[fav.URL] {
 			favStations = append(favStations, fav)
 		}
 	}
@@ -110,13 +116,13 @@ func (f *Favorites) getFavoriteStations(minPlayCount int) []Station {
 	})
 
 	var stations []Station
-	maxFavorites := 10
+
 	for i, fav := range favStations {
-		if i >= maxFavorites {
+		if i >= maxFavs {
 			break
 		}
 		stations = append(stations, Station{
-			title: fav.Title,
+			title: fmt.Sprintf("%s [gray](%d)[-]", fav.Title, fav.PlayCount),
 			url:   fav.URL,
 			tags:  []string{favoritesTag},
 		})
@@ -127,7 +133,7 @@ func (f *Favorites) getFavoriteStations(minPlayCount int) []Station {
 
 func (f *Favorites) hasFavorites() bool {
 	for _, fav := range f.Stations {
-		if fav.PlayCount >= 1 {
+		if fav.PlayCount >= minPlays {
 			return true
 		}
 	}

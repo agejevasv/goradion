@@ -28,7 +28,7 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Mother Earth Radio,https://motherearth.streamserver24.com/listen/motherearth/motherearth.aac,Eclectic;Pop
 	Mother Earth Jazz,https://motherearth.streamserver24.com/listen/motherearth_jazz/motherearth.jazz.mp4,Jazz;Instrumental
 	Mother Earth Instrumental,https://motherearth.streamserver24.com/listen/motherearth_instrumental/motherearth.instrumental.aac,Instrumental
-	Mother Earth Klassic,https://motherearth.streamserver24.com:18910/motherearth.klassik.aac,Classical;Instrumental
+	Mother Earth Klassic,https://motherearth.streamserver24.com/listen/motherearth_klassik/motherearth.klassik.aac,Classical;Instrumental
 	Naim Radio,http://mscp3.live-streams.nl:8360/high.aac,Eclectic
 	Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-high.aac,Jazz
 	Naim Classical,http://mscp3.live-streams.nl:8250/class-high.aac,Classical;Instrumental

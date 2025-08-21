@@ -273,6 +273,12 @@ func (a *Application) setupTagsList() *tview.List {
 func (a *Application) togglePlay(station Station) {
 	if station.url != "" && station.url != a.player.info.Url {
 		a.favorites.track(station)
+		// Refresh favorites display if currently showing favorites
+		if a.tag == favoritesTag {
+			a.filterStationsForSelectedTag()
+			// Find and select the station that was just played
+			a.findAndSelectStation(station.url)
+		}
 	}
 	a.player.Toggle(station)
 }
@@ -281,7 +287,7 @@ func (a *Application) filterStationsForSelectedTag() {
 	match := make([]Station, 0)
 
 	if a.tag == favoritesTag {
-		match = a.favorites.getFavoriteStations(1)
+		match = a.favorites.getFavoriteStations()
 	} else {
 		for i := 0; i < len(a.stations); i++ {
 			for _, t := range a.stations[i].tags {
@@ -293,6 +299,19 @@ func (a *Application) filterStationsForSelectedTag() {
 		}
 	}
 	a.setupStationsList(a.stationsList, match)
+}
+
+func (a *Application) findAndSelectStation(stationURL string) {
+	if a.tag == favoritesTag {
+		favStations := a.favorites.getFavoriteStations()
+		for i, station := range favStations {
+			if station.url == stationURL {
+				// Account for (#) Favorites and (*) Random top items
+				a.stationsList.SetCurrentItem(i + 2)
+				break
+			}
+		}
+	}
 }
 
 func newList() *tview.List {
