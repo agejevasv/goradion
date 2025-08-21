@@ -15,7 +15,7 @@ Goradion is a command line radio player based on `mpv`.
       - `apt install mpv`
      
     - Arch Linux
-      - `pacman -S mpv`
+      - `pacman -S mpv` (there is also AUR package, so you can just do: `yay -S goradion`)
         
     - Windows
       - Download: [mpv](https://sourceforge.net/projects/mpv-player-windows/files/)
