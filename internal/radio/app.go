@@ -63,6 +63,7 @@ type Application struct {
 	player        *Player
 	tag           string
 	lastSearchTag string
+	pageHistory   []Page
 	app           *tview.Application
 	pages         *tview.Pages
 	stationsList  *tview.List
@@ -139,30 +140,54 @@ func (a *Application) setupPages() {
 		AddPage(a.pageNames[Tags], a.tagsFlex, true, true).
 		AddPage(a.pageNames[Main], flex, true, false).
 		AddPage(a.pageNames[Help], help, true, false)
+	a.pageHistory = append(a.pageHistory, Tags)
 }
 
 func (a *Application) show(page Page) {
-	a.pages.SwitchToPage(a.pageNames[page])
-}
+	a.pageHistory = append(a.pageHistory, page)
 
-func (a *Application) toggle(page Page) {
-	if a.pages.GetPageNames(true)[0] == a.pageNames[page] {
-		a.show(Tags)
-	} else {
-		a.show(page)
+	if len(a.pageHistory) > 2 {
+		a.pageHistory = a.pageHistory[len(a.pageHistory)-2:]
 	}
+
+	a.pages.SwitchToPage(a.pageNames[page])
 }
 
 func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey {
 	return func(event *tcell.EventKey) *tcell.EventKey {
+		var currentPage = a.pages.GetPageNames(true)[0]
+
+		closeHelp := func() bool {
+			if currentPage == a.pageNames[Help] && len(a.pageHistory) > 1 {
+				previous := a.pageHistory[len(a.pageHistory)-2]
+				if previous != Help {
+					a.show(previous)
+					return true
+				}
+			}
+			return false
+		}
+
 		switch key := event.Key(); key {
 		case tcell.KeyEscape:
-			if a.pages.GetPageNames(true)[0] != a.pageNames[Tags] {
+			if currentPage == a.pageNames[Search] {
+				return event
+			}
+
+			if currentPage == a.pageNames[Tags] {
+				a.app.Stop()
+				return nil
+			}
+
+			if currentPage == a.pageNames[Main] {
 				a.show(Tags)
 				return nil
-			} else {
-				a.app.Stop()
 			}
+
+			if !closeHelp() {
+				a.show(Tags)
+			}
+			return nil
 		case tcell.KeyCtrlF:
 			a.showSearchModal()
 			return nil
@@ -184,7 +209,9 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 				a.show(Tags)
 				return nil
 			case '?':
-				a.toggle(Help)
+				if !closeHelp() {
+					a.show(Help)
+				}
 				return nil
 			case '~':
 				a.tag = "All Stations"
