@@ -17,11 +17,18 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	FluxFM: Lounge,https://streams.fluxfm.de/lounge/mp3-320/streams.fluxfm.de/play.pls,Lounge;Eclectic
 	FluxFM: Yoga Sounds,https://streams.fluxfm.de/yogasounds/mp3-320/streams.fluxfm.de/play.pls,Ambient
 	FluxFM: HipHop Classics,https://streams.fluxfm.de/boomfmclassics/mp3-320/streams.fluxfm.de/play.pls,HipHop;Downtempo
-	FluxFM: 60s,https://streams.fluxfm.de/60er/mp3-320/streams.fluxfm.de/play.pls,Oldies;Rock
+	FluxFM: 60s,https://streams.fluxfm.de/60er/mp3-320/streams.fluxfm.de/play.pls,Oldies;Rock;Pop
+	FluxFM: 70s,https://streams.fluxfm.de/70er/mp3-320/streams.fluxfm.de/play.pls,Oldies;Rock;Pop
 	FluxFM: 80s,https://streams.fluxfm.de/80er/mp3-320/streams.fluxfm.de/play.pls,80s;Pop
+	FluxFM: 00s,https://streams.fluxfm.de/flx_2000/mp3-320/streams.fluxfm.de/play.pls,Pop
 	FluxFM: Finest,https://streams.fluxfm.de/fluxkompensator/mp3-320/streams.fluxfm.de/play.pls,Eclectic;Pop
 	FluxFM: Berlin Beach House,https://streams.fluxfm.de/bbeachhouse/mp3-320/streams.fluxfm.de/play.pls,House;Electronic
 	FluxFM: NeoFM,https://streams.fluxfm.de/neofm/mp3-320/streams.fluxfm.de/play.pls,Electronic
+	FluxFM: ElektroFlux,https://streams.fluxfm.de/elektro/mp3-320/streams.fluxfm.de/play.pls,Pop;Electronic
+	FluxFM: B-Funk,https://streams.fluxfm.de/event01/mp3-320/streams.fluxfm.de/play.pls,Soul;Funk
+	FluxFM: Indie Disco,https://streams.fluxfm.de/indiedisco/mp3-320/streams.fluxfm.de/play.pls,Pop
+	FluxFM: John Reed Radio,https://streams.fluxfm.de/john-reed/mp3-320/streams.fluxfm.de/play.pls,Electronic;House;Pop
+	FluxFM: MetalFM,https://streams.fluxfm.de/metalfm/mp3-320/streams.fluxfm.de/play.pls,Metal
 	Linn Radio, http://radio.linn.co.uk:8003/autodj,Eclectic
 	Linn Jazz,http://radio.linn.co.uk:8000/autodj,Jazz;Instrumental
 	Linn Classical,http://radio.linn.co.uk:8004/autodj,Classical;Instrumental
@@ -32,9 +39,12 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Naim Radio,http://mscp3.live-streams.nl:8360/high.aac,Eclectic
 	Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-high.aac,Jazz
 	Naim Classical,http://mscp3.live-streams.nl:8250/class-high.aac,Classical;Instrumental
-	Radio Paradise,http://stream.radioparadise.com/aac-320,Eclectic;Pop
-	Radio Paradise Mellow,http://stream.radioparadise.com/mellow-320,Pop;Eclectic
-	Radio Paradise Rock,http://stream.radioparadise.com/rock-320,Rock
+	Radio Paradise: Main,http://stream.radioparadise.com/aac-320,Eclectic;Pop
+	Radio Paradise: Mellow,http://stream.radioparadise.com/mellow-320,Pop;Eclectic
+	Radio Paradise: Rock,http://stream.radioparadise.com/rock-320,Rock
+	Radio Paradise: Global,http://stream.radioparadise.com/global-320,Eclectic
+	Radio Paradise: Beyond...,http://stream.radioparadise.com/beyond-320,Eclectic
+	Radio Paradise: 2050,http://stream.radioparadise.com/radio2050-320,Eclectic
 	Radio Swiss Classic,http://stream.srg-ssr.ch/m/rsc_fr/mp3_128,Classical;Instrumental
 	Radio Swiss Jazz,http://stream.srg-ssr.ch/m/rsj/mp3_128,Jazz;Instrumental
 	Radio Swiss Pop,https://stream.srg-ssr.ch/m/rsp/mp3_128,Eclectic;Pop
@@ -113,7 +123,30 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Rainwave OC Remix,https://rainwave.cc/tune_in/2.mp3.m3u,Soundtrack
 	Rainwave Cover,https://rainwave.cc/tune_in/3.mp3.m3u,Soundtrack
 	Rainwave Chiptune,https://rainwave.cc/tune_in/4.mp3.m3u,Soundtrack
-	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Soundtrack`
+	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Soundtrack
+	Ambient Sleeping Pill,http://radio.stereoscenic.com/asp-h,Ambient
+	Classical KUSC,https://playerservices.streamtheworld.com/pls/KUSCMP256.pls,Classical;Instrumental
+	WFMU,https://wfmu.org/wfmu_mp3.pls,Eclectic
+	WFMU: Rock'n'Soul,https://wfmu.org/wfmu_rock.pls,Rock;Soul
+	WFMU: Sheena's Jungle,https://wfmu.org/sheena.pls,Eclectic
+	Worldwide FM,https://worldwidefm.out.airtime.pro/worldwidefm_b,Eclectic
+	NTS: 1,https://stream-relay-geo.ntslive.net/stream,Eclectic
+	NTS: 2,https://stream-relay-geo.ntslive.net/stream2,Eclectic
+	NTS Mixtape: Slow Focus,https://stream-mixtape-geo.ntslive.net/mixtape,Ambient;Mix
+	NTS Mixtape: Low Key,https://stream-mixtape-geo.ntslive.net/mixtape2,Downtempo;Mix
+	NTS Mixtape: Expansions,https://stream-mixtape-geo.ntslive.net/mixtape3,Jazz;Mix
+	NTS Mixtape: Poolside,https://stream-mixtape-geo.ntslive.net/mixtape4,Pop;Mix
+	NTS Mixtape: 4 To The Floor,https://stream-mixtape-geo.ntslive.net/mixtape5,House;Electronic;Mix
+	NTS Mixtape: Memory Lane,https://stream-mixtape-geo.ntslive.net/mixtape6,Rock;Mix
+	NTS Mixtape: Island Time,https://stream-mixtape-geo.ntslive.net/mixtape21,Reggae;Mix
+	NTS Mixtape: Rap House,https://stream-mixtape-geo.ntslive.net/mixtape22,HipHop;Mix
+	NTS Mixtape: Sweat,https://stream-mixtape-geo.ntslive.net/mixtape24,Mix
+	NTS Mixtape: The Tube,https://stream-mixtape-geo.ntslive.net/mixtape26,Mix
+	NTS Mixtape: Feelings,https://stream-mixtape-geo.ntslive.net/mixtape27,Soul;Mix
+	NTS Mixtape: Labyrinth,https://stream-mixtape-geo.ntslive.net/mixtape31,Mix
+	NTS Mixtape: The Pit,https://stream-mixtape-geo.ntslive.net/mixtape34,Metal;Mix
+	NTS Mixtape: Sheet Music,https://stream-mixtape-geo.ntslive.net/mixtape35,Instrumental;Mix
+	NTS Mixtape: Otaku,https://stream-mixtape-geo.ntslive.net/mixtape36,Soundtrack;Mix`
 
 type Station struct {
 	title string
