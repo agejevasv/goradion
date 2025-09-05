@@ -59,7 +59,9 @@ func NewFavorites(stations []Station) *Favorites {
 		return favorites
 	}
 
-	json.Unmarshal(data, favorites)
+	if err := json.Unmarshal(data, favorites); err != nil {
+		log.Printf("Failed to unmarshal favorites: %v", err)
+	}
 	return favorites
 }
 
@@ -89,7 +91,9 @@ func (f *Favorites) track(station Station) {
 
 	f.Stations[station.url].PlayCount++
 	f.Stations[station.url].LastPlayed = time.Now()
-	f.save()
+	if err := f.save(); err != nil {
+		log.Printf("Failed to save favorites: %v", err)
+	}
 }
 
 func (f *Favorites) getFavoriteStations() []Station {
