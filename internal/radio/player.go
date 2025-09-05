@@ -116,7 +116,7 @@ func (p *Player) VolumeDn() {
 	}
 
 	log.Printf("setting volume %d\n", p.info.Volume-5)
-	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.info.Volume, "\n")
+	cmd := fmt.Sprintf(`{"command": ["set_property", "volume", %d]}%s`, p.info.Volume-5, "\n")
 	writeToMPV([]byte(cmd))
 	p.info.Volume -= 5
 }
