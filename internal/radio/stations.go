@@ -100,7 +100,6 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Magic Radio,http://mp3.magic-radio.net/,80s;Pop
 	Classic Rock Florida,https://vip2.fastcast4u.com/proxy/classicrockdoug?mp=/1,Rock
 	Classic Vinyl,http://icecast.walmradio.com:8000/classic,Jazz;Oldies;Jazz
-	Jazz24,https://live.amperwave.net/direct/ppm-jazz24aac256-ibc1,Jazz;Instrumental
 	MaXXima,http://maxxima.mine.nu:8000/maxx.ogg,House;Electronic
 	Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House
 	freeCodeCamp: Code Radio,https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3,Chillhop;Downtempo
