@@ -41,17 +41,21 @@ type FavoriteStation struct {
 type Favorites struct {
 	Stations          map[string]*FavoriteStation `json:"stations"`
 	availableStations map[string]bool
+	stationsByURL     map[string]Station
 }
 
 func NewFavorites(stations []Station) *Favorites {
 	availableStations := make(map[string]bool)
+	stationsByURL := make(map[string]Station)
 	for _, station := range stations {
 		availableStations[station.url] = true
+		stationsByURL[station.url] = station
 	}
 
 	favorites := &Favorites{
 		Stations:          make(map[string]*FavoriteStation),
 		availableStations: availableStations,
+		stationsByURL:     stationsByURL,
 	}
 
 	data, err := os.ReadFile(getFavoritesFile())
@@ -82,13 +86,19 @@ func (f *Favorites) track(station Station) {
 		return
 	}
 
+	title := station.title
+	if currentStation, ok := f.stationsByURL[station.url]; ok {
+		title = currentStation.title
+	}
+
 	if f.Stations[station.url] == nil {
 		f.Stations[station.url] = &FavoriteStation{
 			URL:   station.url,
-			Title: station.title,
+			Title: title,
 		}
 	}
 
+	f.Stations[station.url].Title = title
 	f.Stations[station.url].PlayCount++
 	f.Stations[station.url].LastPlayed = time.Now()
 	if err := f.save(); err != nil {
@@ -125,8 +135,14 @@ func (f *Favorites) getFavoriteStations() []Station {
 		if i >= maxFavs {
 			break
 		}
+
+		title := fav.Title
+		if currentStation, ok := f.stationsByURL[fav.URL]; ok {
+			title = currentStation.title
+		}
+
 		stations = append(stations, Station{
-			title: fmt.Sprintf("%s [gray](%d)[-]", fav.Title, fav.PlayCount),
+			title: fmt.Sprintf("%s [gray](%d)[-]", title, fav.PlayCount),
 			url:   fav.URL,
 			tags:  []string{favoritesTag},
 		})
