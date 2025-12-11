@@ -1,10 +1,14 @@
 package radio
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
@@ -12,6 +16,7 @@ import (
 
 const (
 	favoritesTag = "Favorites"
+	fadeDuration = 2 * time.Second
 	helpString   = `Keyboard Control
 
 	[green]*[-]
@@ -23,11 +28,17 @@ const (
 	[green]~[-]
 		Show all stations (ignore tags).
 
+	[green]a[-]-[green]z[-] and [green]A[-]-[green]Z[-]
+		Toggle playing a station marked with a given letter (or select a tag).
+
 	[green]Ctrl+F[-] or [green]:[-]
 		Show search to find stations.
 
-	[green]a[-]-[green]z[-] and [green]A[-]-[green]Z[-]
-		Toggle playing a station marked with a given letter (or select a tag).
+	[green]Ctrl+R[-]
+		Toggle shuffle mode (plays a random station at timed intervals).
+
+	[green]Alt+1[-] to [green]Alt+9[-]
+		Set shuffle interval to 1-9 minutes and reset timer.
 
 	[green]Enter[-] and [green]Space[-]
 		Toggle playing currently selected station.
@@ -58,31 +69,39 @@ const (
 )
 
 type Application struct {
-	pageNames     []string
-	stations      []Station
-	player        *Player
-	tag           string
-	lastSearchTag string
-	pageHistory   []Page
-	app           *tview.Application
-	pages         *tview.Pages
-	stationsList  *tview.List
-	tagsList      *tview.List
-	tagsFlex      *tview.Flex
-	status        *tview.TextView
-	volume        *tview.TextView
-	favorites     *Favorites
-	searchModal   *tview.Flex
-	searchInput   *tview.InputField
-	searchResults *tview.List
+	pageNames               []string
+	stations                []Station
+	player                  *Player
+	tag                     string
+	lastSearchTag           string
+	pageHistory             []Page
+	app                     *tview.Application
+	pages                   *tview.Pages
+	stationsList            *tview.List
+	tagsList                *tview.List
+	tagsFlex                *tview.Flex
+	mainFlex                *tview.Flex
+	status                  *tview.TextView
+	volume                  *tview.TextView
+	favorites               *Favorites
+	searchModal             *tview.Flex
+	searchInput             *tview.InputField
+	searchResults           *tview.List
+	timedRandomActive       bool
+	timedRandomCancel       context.CancelFunc
+	shuffleIterationStartAt time.Time
+	shuffleInterval         time.Duration
+	waitingForPlayback      chan struct{}
+	waitingForURL           string
 }
 
 func NewApp(player *Player, stations []Station) *Application {
 	a := &Application{
-		player:    player,
-		stations:  stations,
-		pageNames: []string{"Main", "Help", "Tags", "Search"},
-		favorites: NewFavorites(stations),
+		player:          player,
+		stations:        stations,
+		pageNames:       []string{"Main", "Help", "Tags", "Search"},
+		favorites:       NewFavorites(stations),
+		shuffleInterval: 5 * time.Minute,
 	}
 
 	a.setupPages()
@@ -121,7 +140,7 @@ func (a *Application) setupPages() {
 		AddItem(a.status, 0, 100, true).
 		AddItem(a.volume, 0, 25, false)
 
-	flex := tview.NewFlex().
+	a.mainFlex = tview.NewFlex().
 		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(a.stationsList, 0, 100, true).
 			AddItem(statusFlex, 0, 1, true), 0, 1, true)
@@ -138,7 +157,7 @@ func (a *Application) setupPages() {
 
 	a.pages = tview.NewPages().
 		AddPage(a.pageNames[Tags], a.tagsFlex, true, true).
-		AddPage(a.pageNames[Main], flex, true, false).
+		AddPage(a.pageNames[Main], a.mainFlex, true, false).
 		AddPage(a.pageNames[Help], help, true, false)
 	a.pageHistory = append(a.pageHistory, Tags)
 }
@@ -180,6 +199,7 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			}
 
 			if currentPage == a.pageNames[Main] {
+				a.tag = ""
 				a.show(Tags)
 				return nil
 			}
@@ -191,6 +211,9 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 		case tcell.KeyCtrlF:
 			a.showSearchModal()
 			return nil
+		case tcell.KeyCtrlR:
+			go a.toggleTimedRandom()
+			return nil
 		case tcell.KeyLeft:
 			a.player.VolumeDn()
 			return nil
@@ -198,6 +221,14 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			a.player.VolumeUp()
 			return nil
 		case tcell.KeyRune:
+			if event.Modifiers()&tcell.ModAlt != 0 {
+				r := event.Rune()
+				if r >= '1' && r <= '9' {
+					minutes := int(r - '0')
+					go a.setShuffleInterval(minutes)
+					return nil
+				}
+			}
 			switch event.Rune() {
 			case '=', '+':
 				a.player.VolumeUp()
@@ -229,18 +260,25 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 
 func (a *Application) updateStatus() {
 	for inf := range a.player.Info {
+		stationName := stripPlayCount(inf.Station)
 		if inf.Song == "" && inf.Status == "" {
-			a.status.SetText(inf.Station)
+			a.status.SetText(stationName)
 		} else if inf.Song == "" {
-			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, inf.Status))
+			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", stationName, inf.Status))
 		} else {
-			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", inf.Station, stripBraces(inf.Song)))
+			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", stationName, stripBraces(inf.Song)))
 		}
 
 		if inf.Bitrate > 0 {
 			a.volume.SetText(fmt.Sprintf("%d kb/s [gray]|[lightgray] %d%%", inf.Bitrate, inf.Volume))
 		} else {
 			a.volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
+		}
+
+		if a.waitingForPlayback != nil && inf.Url == a.waitingForURL && (inf.Status == "Playing" || inf.Song != "") {
+			close(a.waitingForPlayback)
+			a.waitingForPlayback = nil
+			a.waitingForURL = ""
 		}
 
 		a.app.Draw()
@@ -255,6 +293,7 @@ func (a *Application) setupStationsList(list *tview.List, stations []Station) *t
 
 	if a.tag != "" {
 		list = list.AddItem(fmt.Sprintf("[red:black:]%s", a.tag), "", rune('#'), func() {
+			a.tag = ""
 			a.show(Tags)
 		})
 	}
@@ -267,12 +306,12 @@ func (a *Application) setupStationsList(list *tview.List, stations []Station) *t
 		}
 
 		list.SetCurrentItem(r + offset)
-		go a.togglePlay(stations[r])
+		go a.togglePlayManual(stations[r])
 	})
 
-	for i := 0; i < len(stations); i++ {
+	for i := range stations {
 		list = list.AddItem(stations[i].title, "", idxToRune(i), func() {
-			go a.togglePlay(stations[i])
+			go a.togglePlayManual(stations[i])
 		})
 
 		if a.player.info.Url == stations[i].url {
@@ -296,7 +335,7 @@ func (a *Application) setupTagsList() *tview.List {
 		})
 	}
 
-	for i := 0; i < len(tags); i++ {
+	for i := range tags {
 		tagsList = tagsList.AddItem(tags[i], "", idxToRune(i), func() {
 			a.tag = tags[i]
 			a.filterStationsForSelectedTag()
@@ -333,6 +372,211 @@ func (a *Application) togglePlay(station Station) {
 	a.player.Toggle(station)
 }
 
+func (a *Application) togglePlayManual(station Station) {
+	if a.timedRandomActive {
+		a.toggleTimedRandom()
+	}
+	a.togglePlay(station)
+}
+
+func (a *Application) toggleTimedRandom() {
+	if a.timedRandomActive {
+		if a.timedRandomCancel != nil {
+			a.timedRandomCancel()
+		}
+
+		a.player.Lock()
+		if a.player.fadeCancel != nil {
+			a.player.fadeCancel()
+		}
+		a.player.Unlock()
+
+		a.timedRandomActive = false
+		a.updateShuffleBorder()
+		return
+	}
+
+	a.timedRandomActive = true
+	a.shuffleIterationStartAt = time.Now()
+	ctx, cancel := context.WithCancel(context.Background())
+	a.timedRandomCancel = cancel
+
+	a.updateShuffleBorder()
+
+	go a.updateCountdown(ctx)
+
+	stations := a.getStationsFromCurrentView()
+	if len(stations) > 0 {
+		r := rand.Intn(len(stations))
+		for len(stations) > 1 && a.player.info.Url == stations[r].url {
+			r = rand.Intn(len(stations))
+		}
+		offset := a.calculateStationListOffset()
+		a.stationsList.SetCurrentItem(r + offset)
+		go a.togglePlay(stations[r])
+	}
+
+	go a.timedRandomLoop(ctx)
+}
+
+func (a *Application) setShuffleInterval(minutes int) {
+	a.shuffleInterval = time.Duration(minutes) * time.Minute
+	if a.timedRandomActive {
+		if a.timedRandomCancel != nil {
+			a.timedRandomCancel()
+		}
+		a.player.Lock()
+		if a.player.fadeCancel != nil {
+			a.player.fadeCancel()
+		}
+		a.player.Unlock()
+
+		a.timedRandomActive = true
+		a.shuffleIterationStartAt = time.Now()
+		ctx, cancel := context.WithCancel(context.Background())
+		a.timedRandomCancel = cancel
+
+		a.updateShuffleBorder()
+
+		go a.updateCountdown(ctx)
+		go a.timedRandomLoop(ctx)
+	}
+}
+
+func (a *Application) updateShuffleBorder() {
+	a.app.QueueUpdateDraw(func() {
+		if a.timedRandomActive {
+			elapsed := time.Since(a.shuffleIterationStartAt)
+			remaining := max(a.shuffleInterval-elapsed, 0)
+			minutes := int(remaining.Minutes())
+			seconds := int(remaining.Seconds()) % 60
+			countdown := fmt.Sprintf("%02d:%02d", minutes, seconds)
+
+			title := fmt.Sprintf(" [red]🔀[-] Shuffle %s ", countdown)
+			a.mainFlex.SetBorder(true).SetBorderColor(tcell.ColorWhite).SetBackgroundColor(tcell.ColorDefault).SetTitle(title)
+			a.tagsFlex.SetBorder(true).SetBorderColor(tcell.ColorWhite).SetBackgroundColor(tcell.ColorDefault).SetTitle(title)
+		} else {
+			a.mainFlex.SetBorder(false).SetBackgroundColor(tcell.ColorBlack)
+			a.tagsFlex.SetBorder(false).SetBackgroundColor(tcell.ColorBlack)
+		}
+	})
+}
+
+func (a *Application) updateCountdown(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			a.updateShuffleBorder()
+		}
+	}
+}
+
+func (a *Application) timedRandomLoop(ctx context.Context) {
+	ticker := time.NewTicker(a.shuffleInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fadeCtx, fadeCancel := context.WithCancel(ctx)
+
+			a.player.Lock()
+			a.player.fadeCancel = fadeCancel
+			savedVol := a.player.info.Volume
+			a.player.Unlock()
+
+			a.player.FadeOut(fadeCtx, fadeDuration)
+
+			if fadeCtx.Err() != nil {
+				a.player.SetVolume(savedVol)
+				fadeCancel()
+				return
+			}
+
+			stations := a.getStationsFromCurrentView()
+			if len(stations) > 0 {
+				r := rand.Intn(len(stations))
+				for len(stations) > 1 && a.player.info.Url == stations[r].url {
+					r = rand.Intn(len(stations))
+				}
+				offset := a.calculateStationListOffset()
+				a.stationsList.SetCurrentItem(r + offset)
+
+				a.waitingForPlayback = make(chan struct{})
+				a.waitingForURL = stations[r].url
+				go a.togglePlay(stations[r])
+				a.shuffleIterationStartAt = time.Now()
+
+				select {
+				case <-a.waitingForPlayback:
+				case <-fadeCtx.Done():
+					a.waitingForPlayback = nil
+					a.waitingForURL = ""
+					a.player.SetVolume(savedVol)
+					fadeCancel()
+					return
+				case <-time.After(30 * time.Second):
+				}
+
+				a.waitingForPlayback = nil
+				a.waitingForURL = ""
+			}
+
+			if fadeCtx.Err() != nil {
+				a.player.SetVolume(savedVol)
+				fadeCancel()
+				return
+			}
+
+			a.player.FadeIn(fadeCtx, fadeDuration)
+
+			if fadeCtx.Err() != nil {
+				a.player.SetVolume(savedVol)
+				fadeCancel()
+				return
+			}
+
+			fadeCancel()
+			a.player.Lock()
+			a.player.fadeCancel = nil
+			a.player.Unlock()
+		}
+	}
+}
+
+func (a *Application) getStationsFromCurrentView() []Station {
+	if a.tag == "" {
+		return a.stations
+	}
+
+	if a.tag == favoritesTag {
+		return a.favorites.getFavoriteStations()
+	}
+
+	if a.tag == "All Stations" {
+		return a.stations
+	}
+
+	if a.tag == a.lastSearchTag && a.lastSearchTag != "" {
+		return a.filterStations(a.tag)
+	}
+
+	match := make([]Station, 0)
+	for i := 0; i < len(a.stations); i++ {
+		if slices.Contains(a.stations[i].tags, a.tag) {
+			match = append(match, a.stations[i])
+		}
+	}
+	return match
+}
+
 func (a *Application) filterStationsForSelectedTag() {
 	match := make([]Station, 0)
 
@@ -340,11 +584,8 @@ func (a *Application) filterStationsForSelectedTag() {
 		match = a.favorites.getFavoriteStations()
 	} else {
 		for i := 0; i < len(a.stations); i++ {
-			for _, t := range a.stations[i].tags {
-				if a.tag == "All Stations" || t == a.tag {
-					match = append(match, a.stations[i])
-					break
-				}
+			if a.tag == "All Stations" || slices.Contains(a.stations[i].tags, a.tag) {
+				match = append(match, a.stations[i])
 			}
 		}
 	}
@@ -402,6 +643,11 @@ func tags(stations []Station) []string {
 func stripBraces(s string) string {
 	s = strings.ReplaceAll(s, "[", "(")
 	return strings.ReplaceAll(s, "]", ")")
+}
+
+func stripPlayCount(s string) string {
+	re := regexp.MustCompile(` \[gray\]\(\d+\)\[-\]$`)
+	return re.ReplaceAllString(s, "")
 }
 
 func idxToRune(i int) rune {
@@ -558,7 +804,7 @@ func (a *Application) selectFoundResults(query string, stations []Station, selec
 
 	stationIndex := a.findStationIndex(selectedStation.url, stations)
 	a.stationsList.SetCurrentItem(stationIndex)
-	go a.togglePlay(selectedStation)
+	go a.togglePlayManual(selectedStation)
 }
 
 func (a *Application) fuzzyMatch(station Station, queryWords []string) bool {
