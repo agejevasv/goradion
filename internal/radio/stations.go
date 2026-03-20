@@ -65,7 +65,7 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	SomaFM: Fluid,http://somafm.com/fluid130.pls,Electronic
 	SomaFM: Cliqhop IDM,https://somafm.com/cliqhop256.pls,Electronic
 	SomaFM: Illinois Street Lounge,http://somafm.com/illstreet.pls,Oldies;Lounge
-	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls,Electronic
+	SomaFM: Vaporwaves,http://somafm.com/vaporwaves.pls,Electronic;Vaporwave
 	SomaFM: Department Store Christmas,https://somafm.com/nossl/deptstore256.pls,Xmas
 	SomaFM: Tiki Time,https://somafm.com/nossl/tikitime256.pls,Lounge;Oldies
 	SomaFM: Synphaera,https://somafm.com/nossl/synphaera256.pls,Ambient;Electronic
@@ -121,6 +121,12 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Rainwave All,https://rainwave.cc/tune_in/5.mp3.m3u,Soundtrack
 	Ambient Sleeping Pill,http://radio.stereoscenic.com/asp-h,Ambient
 	Classical KUSC,https://playerservices.streamtheworld.com/pls/KUSCMP256.pls,Classical;Instrumental
+	Concertzender,https://streams.greenhost.nl:8006/live,Classical;Eclectic
+	Concertzender: Jazz,https://streams.greenhost.nl:8006/jazz,Jazz
+	Dublab,https://dublab.out.airtime.pro/dublab_a,Eclectic;Electronic
+	Subcity,https://stream.subcity.org/listen,Eclectic
+	Nightwave Plaza,https://radio.plaza.one/mp3,Vaporwave
+	Dandelion Radio,http://stream.dandelionradio.com:9414/stream,Eclectic
 	WFMU,https://wfmu.org/wfmu_mp3.pls,Eclectic
 	WFMU: Rock'n'Soul,https://wfmu.org/wfmu_rock.pls,Rock;Soul
 	WFMU: Sheena's Jungle,https://wfmu.org/sheena.pls,Eclectic
