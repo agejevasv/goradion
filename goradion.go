@@ -11,6 +11,8 @@ import (
 var cfg = flag.String("s", "", "A link or a path to a stations.csv file")
 var ver = flag.Bool("v", false, "Show the version number and quit")
 var dbg = flag.Bool("d", false, "Enable debug log (goradion.log file in a current dir)")
+var chk = flag.Bool("c", false, "")
+
 
 func main() {
 	flag.Parse()
@@ -25,6 +27,11 @@ func main() {
 	stations := radio.Stations(*cfg)
 	if len(stations) == 0 {
 		fmt.Println("Stations list is empty, exiting.")
+		os.Exit(0)
+	}
+
+	if *chk {
+		radio.CheckStations(stations)
 		os.Exit(0)
 	}
 

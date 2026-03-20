@@ -6,7 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
+	"sync"
+	"time"
 )
 
 const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.fluxfm.de/jazzschwarz/mp3-320/audio/,Jazz;Instrumental
@@ -32,10 +35,6 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Linn Radio, http://radio.linn.co.uk:8003/autodj,Eclectic
 	Linn Jazz,http://radio.linn.co.uk:8000/autodj,Jazz;Instrumental
 	Linn Classical,http://radio.linn.co.uk:8004/autodj,Classical;Instrumental
-	Mother Earth Radio,https://motherearth.streamserver24.com/listen/motherearth/motherearth.aac,Eclectic;Pop
-	Mother Earth Jazz,https://motherearth.streamserver24.com/listen/motherearth_jazz/motherearth.jazz.mp4,Jazz;Instrumental
-	Mother Earth Instrumental,https://motherearth.streamserver24.com/listen/motherearth_instrumental/motherearth.instrumental.aac,Instrumental
-	Mother Earth Klassic,https://motherearth.streamserver24.com/listen/motherearth_klassik/motherearth.klassik.aac,Classical;Instrumental
 	Naim Radio,http://mscp3.live-streams.nl:8360/high.aac,Eclectic
 	Naim Jazz,http://mscp3.live-streams.nl:8340/jazz-high.aac,Jazz
 	Naim Classical,http://mscp3.live-streams.nl:8250/class-high.aac,Classical;Instrumental
@@ -93,8 +92,6 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Section8Recs,https://azura.drmnbss.org:8020/radio.mp3,Electronic;Jungle
 	KoolFM,https://admin.stream.rinse.fm/proxy/kool/stream,Electronic;Jungle
 	RinseFM,https://admin.stream.rinse.fm/proxy/rinse_uk/stream,Electronic
-	Deepinside Radio Show,https://n44a-eu.rcs.revma.com/uyrbt6xuhnruv,House;Electronic
-	Deepinside Guest Sessions,https://n30a-eu.rcs.revma.com/u62vcepz3tzuv,House;Electronic
 	Deep Vibes Radio,http://88.208.218.19:9106/listen.pls,House;Electronic
 	Dogglounge,https://dogglounge.com/listen.pls,House;Electronic
 	Magic Radio,http://mp3.magic-radio.net/,80s;Pop
@@ -108,7 +105,6 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	Radio Santa Claus,https://streaming.radiostreamlive.com/radiosantaclaus_devices,Xmas
 	KCRW Eclectic24,https://streams.kcrw.com/e24_mp3,Eclectic;Pop
 	Aardvark Blues FM,http://streaming.live365.com/b77280_128mp3,Blues
-	Houston Blues Radio,http://streaming.live365.com/b76353_128mp3,Blues
 	Blues Radio,https://i4.streams.ovh/sc/bluesrad/stream,Blues
 	DeathFM,http://hi5.death.fm,Metal
 	1980sFM,http://hi5.1980s.fm,80s;Pop
@@ -128,7 +124,7 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	WFMU,https://wfmu.org/wfmu_mp3.pls,Eclectic
 	WFMU: Rock'n'Soul,https://wfmu.org/wfmu_rock.pls,Rock;Soul
 	WFMU: Sheena's Jungle,https://wfmu.org/sheena.pls,Eclectic
-	Worldwide FM,https://worldwidefm.out.airtime.pro/worldwidefm_b,Eclectic
+	Worldwide FM,https://worldwide-fm.radiocult.fm/stream,Eclectic
 	NTS: 1,https://stream-relay-geo.ntslive.net/stream,Eclectic
 	NTS: 2,https://stream-relay-geo.ntslive.net/stream2,Eclectic
 	NTS Mixtape: Slow Focus,https://stream-mixtape-geo.ntslive.net/mixtape,Ambient;Mix
@@ -195,6 +191,57 @@ func Stations(sta string) []Station {
 
 	return stations
 }
+
+func CheckStations(stations []Station) {
+	var wg sync.WaitGroup
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	type result struct {
+		title string
+		url   string
+		ok    bool
+		err   string
+	}
+
+	results := make([]result, len(stations))
+
+	for i, s := range stations {
+		wg.Add(1)
+		go func(i int, s Station) {
+			defer wg.Done()
+			r := result{title: s.title, url: s.url}
+			resp, err := client.Get(s.url)
+			if err == nil {
+				resp.Body.Close()
+				r.ok = resp.StatusCode >= 200 && resp.StatusCode < 400
+			}
+			if !r.ok {
+				r.ok = checkMpv(s.url)
+			}
+			if !r.ok {
+				r.err = "stream not responding"
+			}
+			results[i] = r
+		}(i, s)
+	}
+
+	wg.Wait()
+
+	dead := 0
+	for _, r := range results {
+		if !r.ok {
+			fmt.Printf("  DEAD  %s  (%s)\n", r.title, r.err)
+			dead++
+		}
+	}
+	fmt.Printf("\n%d/%d stations alive, %d dead\n", len(stations)-dead, len(stations), dead)
+}
+
+func checkMpv(rawURL string) bool {
+	cmd := exec.Command("mpv", "--no-video", "--no-terminal", "--frames=1", rawURL)
+	return cmd.Run() == nil
+}
+
 
 func fetchStations(url string) (string, error) {
 	resp, err := http.Get(url)
