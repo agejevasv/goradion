@@ -34,6 +34,9 @@ const (
 	[green]Ctrl+F[-] or [green]:[-]
 		Show search to find stations.
 
+	[green]Ctrl+S[-]
+		Search online via radio-browser.info.
+
 	[green]Ctrl+R[-]
 		Toggle shuffle mode (plays a random station at timed intervals).
 
@@ -66,6 +69,7 @@ const (
 	Help
 	Tags
 	Search
+	Browse
 )
 
 type Application struct {
@@ -87,6 +91,10 @@ type Application struct {
 	searchModal             *tview.Flex
 	searchInput             *tview.InputField
 	searchResults           *tview.List
+	browseModal             *tview.Flex
+	browseInput             *tview.InputField
+	browseResults           *tview.List
+	lastBrowseStations      []Station
 	timedRandomActive       bool
 	timedRandomCancel       context.CancelFunc
 	shuffleIterationStartAt time.Time
@@ -99,13 +107,14 @@ func NewApp(player *Player, stations []Station) *Application {
 	a := &Application{
 		player:          player,
 		stations:        stations,
-		pageNames:       []string{"Main", "Help", "Tags", "Search"},
+		pageNames:       []string{"Main", "Help", "Tags", "Search", "Browse"},
 		favorites:       NewFavorites(stations),
 		shuffleInterval: 5 * time.Minute,
 	}
 
 	a.setupPages()
 	a.setupSearchModal()
+	a.setupBrowseModal()
 
 	a.app = tview.NewApplication().
 		SetRoot(a.pages, true).
@@ -189,7 +198,7 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 
 		switch key := event.Key(); key {
 		case tcell.KeyEscape:
-			if currentPage == a.pageNames[Search] {
+			if currentPage == a.pageNames[Search] || currentPage == a.pageNames[Browse] {
 				return event
 			}
 
@@ -210,6 +219,9 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			return nil
 		case tcell.KeyCtrlF:
 			a.showSearchModal()
+			return nil
+		case tcell.KeyCtrlS:
+			a.showBrowseModal()
 			return nil
 		case tcell.KeyCtrlR:
 			go a.toggleTimedRandom()
@@ -345,7 +357,12 @@ func (a *Application) setupTagsList() *tview.List {
 
 	if a.lastSearchTag != "" {
 		tagsList = tagsList.AddItem(a.lastSearchTag, "", rune('^'), func() {
-			matchedStations := a.filterStations(a.lastSearchTag)
+			var matchedStations []Station
+			if a.lastBrowseStations != nil {
+				matchedStations = a.lastBrowseStations
+			} else {
+				matchedStations = a.filterStations(a.lastSearchTag)
+			}
 			a.tag = a.lastSearchTag
 			a.setupStationsList(a.stationsList, matchedStations)
 			a.show(Main)
@@ -379,178 +396,6 @@ func (a *Application) togglePlayManual(station Station) {
 	a.togglePlay(station)
 }
 
-func (a *Application) toggleTimedRandom() {
-	if a.timedRandomActive {
-		if a.timedRandomCancel != nil {
-			a.timedRandomCancel()
-		}
-
-		a.player.Lock()
-		if a.player.fadeCancel != nil {
-			a.player.fadeCancel()
-		}
-		a.player.Unlock()
-
-		a.timedRandomActive = false
-		a.updateShuffleBorder()
-		return
-	}
-
-	a.timedRandomActive = true
-	a.shuffleIterationStartAt = time.Now()
-	ctx, cancel := context.WithCancel(context.Background())
-	a.timedRandomCancel = cancel
-
-	a.updateShuffleBorder()
-
-	go a.updateCountdown(ctx)
-
-	stations := a.getStationsFromCurrentView()
-	if len(stations) > 0 {
-		r := rand.Intn(len(stations))
-		for len(stations) > 1 && a.player.info.Url == stations[r].url {
-			r = rand.Intn(len(stations))
-		}
-		offset := a.calculateStationListOffset()
-		a.stationsList.SetCurrentItem(r + offset)
-		go a.togglePlay(stations[r])
-	}
-
-	go a.timedRandomLoop(ctx)
-}
-
-func (a *Application) setShuffleInterval(minutes int) {
-	a.shuffleInterval = time.Duration(minutes) * time.Minute
-	if a.timedRandomActive {
-		if a.timedRandomCancel != nil {
-			a.timedRandomCancel()
-		}
-		a.player.Lock()
-		if a.player.fadeCancel != nil {
-			a.player.fadeCancel()
-		}
-		a.player.Unlock()
-
-		a.timedRandomActive = true
-		a.shuffleIterationStartAt = time.Now()
-		ctx, cancel := context.WithCancel(context.Background())
-		a.timedRandomCancel = cancel
-
-		a.updateShuffleBorder()
-
-		go a.updateCountdown(ctx)
-		go a.timedRandomLoop(ctx)
-	}
-}
-
-func (a *Application) updateShuffleBorder() {
-	a.app.QueueUpdateDraw(func() {
-		if a.timedRandomActive {
-			elapsed := time.Since(a.shuffleIterationStartAt)
-			remaining := max(a.shuffleInterval-elapsed, 0)
-			minutes := int(remaining.Minutes())
-			seconds := int(remaining.Seconds()) % 60
-			countdown := fmt.Sprintf("%02d:%02d", minutes, seconds)
-
-			title := fmt.Sprintf(" [red]🔀[-] Shuffle %s ", countdown)
-			a.mainFlex.SetBorder(true).SetBorderColor(tcell.ColorWhite).SetBackgroundColor(tcell.ColorDefault).SetTitle(title)
-			a.tagsFlex.SetBorder(true).SetBorderColor(tcell.ColorWhite).SetBackgroundColor(tcell.ColorDefault).SetTitle(title)
-		} else {
-			a.mainFlex.SetBorder(false).SetBackgroundColor(tcell.ColorBlack)
-			a.tagsFlex.SetBorder(false).SetBackgroundColor(tcell.ColorBlack)
-		}
-	})
-}
-
-func (a *Application) updateCountdown(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			a.updateShuffleBorder()
-		}
-	}
-}
-
-func (a *Application) timedRandomLoop(ctx context.Context) {
-	ticker := time.NewTicker(a.shuffleInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			fadeCtx, fadeCancel := context.WithCancel(ctx)
-
-			a.player.Lock()
-			a.player.fadeCancel = fadeCancel
-			savedVol := a.player.info.Volume
-			a.player.Unlock()
-
-			a.player.FadeOut(fadeCtx, fadeDuration)
-
-			if fadeCtx.Err() != nil {
-				a.player.SetVolume(savedVol)
-				fadeCancel()
-				return
-			}
-
-			stations := a.getStationsFromCurrentView()
-			if len(stations) > 0 {
-				r := rand.Intn(len(stations))
-				for len(stations) > 1 && a.player.info.Url == stations[r].url {
-					r = rand.Intn(len(stations))
-				}
-				offset := a.calculateStationListOffset()
-				a.stationsList.SetCurrentItem(r + offset)
-
-				a.waitingForPlayback = make(chan struct{})
-				a.waitingForURL = stations[r].url
-				go a.togglePlay(stations[r])
-				a.shuffleIterationStartAt = time.Now()
-
-				select {
-				case <-a.waitingForPlayback:
-				case <-fadeCtx.Done():
-					a.waitingForPlayback = nil
-					a.waitingForURL = ""
-					a.player.SetVolume(savedVol)
-					fadeCancel()
-					return
-				case <-time.After(30 * time.Second):
-				}
-
-				a.waitingForPlayback = nil
-				a.waitingForURL = ""
-			}
-
-			if fadeCtx.Err() != nil {
-				a.player.SetVolume(savedVol)
-				fadeCancel()
-				return
-			}
-
-			a.player.FadeIn(fadeCtx, fadeDuration)
-
-			if fadeCtx.Err() != nil {
-				a.player.SetVolume(savedVol)
-				fadeCancel()
-				return
-			}
-
-			fadeCancel()
-			a.player.Lock()
-			a.player.fadeCancel = nil
-			a.player.Unlock()
-		}
-	}
-}
-
 func (a *Application) getStationsFromCurrentView() []Station {
 	if a.tag == "" {
 		return a.stations
@@ -565,6 +410,9 @@ func (a *Application) getStationsFromCurrentView() []Station {
 	}
 
 	if a.tag == a.lastSearchTag && a.lastSearchTag != "" {
+		if a.lastBrowseStations != nil {
+			return a.lastBrowseStations
+		}
 		return a.filterStations(a.tag)
 	}
 
@@ -602,6 +450,38 @@ func (a *Application) findAndSelectStation(stationURL string) {
 			}
 		}
 	}
+}
+
+func (a *Application) calculateStationListOffset() int {
+	offset := 1
+
+	if a.tag != "" {
+		offset++
+	}
+
+	return offset
+}
+
+func (a *Application) findStationIndex(stationURL string, stations []Station) int {
+	offset := a.calculateStationListOffset()
+
+	for i, station := range stations {
+		if station.url == stationURL {
+			return i + offset
+		}
+	}
+	return offset
+}
+
+func (a *Application) refreshTagsPage() {
+	a.tagsList = a.setupTagsList()
+	a.tagsFlex.Clear()
+	statusFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
+		AddItem(a.status, 0, 100, true).
+		AddItem(a.volume, 0, 25, false)
+	a.tagsFlex.AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(a.tagsList, 0, 100, true).
+		AddItem(statusFlex, 0, 1, true), 0, 1, true)
 }
 
 func newList() *tview.List {
@@ -666,194 +546,4 @@ func idxToRune(i int) rune {
 	}
 
 	return 0
-}
-
-func (a *Application) setupSearchModal() {
-	a.searchInput = tview.NewInputField().
-		SetLabel("Search: ").
-		SetFieldWidth(0).
-		SetChangedFunc(a.updateSearchResults)
-
-	a.searchInput.SetFieldBackgroundColor(tcell.ColorBlack)
-	a.searchInput.SetBackgroundColor(tcell.ColorDefault)
-	a.searchInput.SetLabelColor(tcell.ColorGreen)
-
-	a.searchInput.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Key() {
-		case tcell.KeyEscape:
-			a.pages.HidePage(a.pageNames[Search])
-			return nil
-		case tcell.KeyEnter:
-			text := a.searchInput.GetText()
-			if text != "" {
-				a.search(text)
-			}
-			return nil
-		case tcell.KeyDown, tcell.KeyTab:
-			a.app.SetFocus(a.searchResults)
-			if a.searchResults.GetItemCount() > 0 {
-				a.searchResults.SetCurrentItem(0)
-			}
-			return nil
-		}
-		return event
-	})
-
-	a.searchResults = newList()
-	a.searchResults.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Key() {
-		case tcell.KeyEscape:
-			a.pages.HidePage(a.pageNames[Search])
-			return nil
-		case tcell.KeyUp:
-			if a.searchResults.GetCurrentItem() == 0 {
-				a.app.SetFocus(a.searchInput)
-				return nil
-			}
-		}
-		return event
-	})
-
-	searchContent := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(a.searchInput, 1, 0, true).
-		AddItem(a.searchResults, 0, 1, false)
-
-	searchContent.SetBorder(true).SetTitle(" Station Search ").SetBackgroundColor(tcell.ColorDefault)
-
-	a.searchModal = tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(nil, 0, 5, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexColumn).
-			AddItem(nil, 0, 5, false).
-			AddItem(searchContent, 0, 90, true).
-			AddItem(nil, 0, 5, false), 0, 90, true).
-		AddItem(nil, 0, 5, false)
-
-	a.pages.AddPage(a.pageNames[Search], a.searchModal, true, false)
-}
-
-func (a *Application) showSearchModal() {
-	a.searchInput.SetText("")
-	a.searchResults.Clear()
-	a.updateSearchResults("")
-	a.pages.ShowPage(a.pageNames[Search])
-	a.app.SetFocus(a.searchInput)
-}
-
-func (a *Application) filterStations(query string) []Station {
-	if query == "" {
-		return nil
-	}
-
-	queryWords := strings.Fields(strings.ToLower(query))
-	var matchedStations []Station
-
-	for _, station := range a.stations {
-		if a.fuzzyMatch(station, queryWords) {
-			matchedStations = append(matchedStations, station)
-		}
-	}
-
-	return matchedStations
-}
-
-func (a *Application) calculateStationListOffset() int {
-	offset := 1
-
-	if a.tag != "" {
-		offset++
-	}
-
-	return offset
-}
-
-func (a *Application) findStationIndex(stationURL string, stations []Station) int {
-	offset := a.calculateStationListOffset()
-
-	for i, station := range stations {
-		if station.url == stationURL {
-			return i + offset
-		}
-	}
-	return offset
-}
-
-func (a *Application) updateSearchResults(query string) {
-	a.searchResults.Clear()
-
-	matchedStations := a.filterStations(query)
-
-	for _, station := range matchedStations {
-		currentStation := station
-		a.searchResults.AddItem(station.title, "", 0, func() {
-			a.selectFoundResults(query, matchedStations, currentStation)
-		})
-	}
-
-	if len(matchedStations) == 0 && query != "" {
-		a.searchResults.AddItem("No stations found", "", rune('!'), nil)
-	}
-}
-
-func (a *Application) selectFoundResults(query string, stations []Station, selectedStation Station) {
-	a.tag = query
-	a.lastSearchTag = a.tag
-	a.setupStationsList(a.stationsList, stations)
-	a.refreshTagsPage()
-	a.show(Main)
-	a.pages.HidePage(a.pageNames[Search])
-
-	stationIndex := a.findStationIndex(selectedStation.url, stations)
-	a.stationsList.SetCurrentItem(stationIndex)
-	go a.togglePlayManual(selectedStation)
-}
-
-func (a *Application) fuzzyMatch(station Station, queryWords []string) bool {
-	stationTitle := strings.ToLower(station.title)
-
-	for _, word := range queryWords {
-		wordFound := false
-
-		if strings.Contains(stationTitle, word) {
-			wordFound = true
-		}
-
-		if !wordFound {
-			for _, tag := range station.tags {
-				if strings.Contains(strings.ToLower(tag), word) {
-					wordFound = true
-					break
-				}
-			}
-		}
-
-		if !wordFound {
-			return false
-		}
-	}
-
-	return true
-}
-
-func (a *Application) search(query string) {
-	matchedStations := a.filterStations(query)
-
-	if len(matchedStations) > 0 {
-		a.tag = query
-		a.lastSearchTag = a.tag
-		a.setupStationsList(a.stationsList, matchedStations)
-		a.refreshTagsPage()
-		a.show(Main)
-		a.pages.HidePage(a.pageNames[Search])
-	}
-}
-
-func (a *Application) refreshTagsPage() {
-	a.tagsList = a.setupTagsList()
-	a.tagsFlex.Clear()
-	statusFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(a.status, 0, 100, true).
-		AddItem(a.volume, 0, 25, false)
-	a.tagsFlex.AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(a.tagsList, 0, 100, true).
-		AddItem(statusFlex, 0, 1, true), 0, 1, true)
 }

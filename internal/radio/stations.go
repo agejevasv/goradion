@@ -248,7 +248,6 @@ func checkMpv(rawURL string) bool {
 	return cmd.Run() == nil
 }
 
-
 func fetchStations(url string) (string, error) {
 	resp, err := http.Get(url)
 
