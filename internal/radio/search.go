@@ -95,6 +95,7 @@ func (a *Application) showSearchModal(online bool) {
 		return
 	}
 
+	a.hideRemoteModal()
 	a.searchOnline = online
 	a.searchGeneration++
 	a.searchInput.SetText("")

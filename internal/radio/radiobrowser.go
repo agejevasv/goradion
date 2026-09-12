@@ -68,13 +68,22 @@ func SearchRadioBrowser(query string) ([]RadioBrowserResult, error) {
 		return nil, err
 	}
 
-	results := make([]RadioBrowserResult, 0, len(apiResults))
-	for _, r := range apiResults {
+	return parseRadioBrowser(apiResults), nil
+}
+
+// parseRadioBrowser drops rows without a usable name or URL, and repeated
+// stream URLs: the database holds duplicate entries with different ids for the
+// same stream. Rows arrive sorted by click count, so the first one wins.
+func parseRadioBrowser(rows []radioBrowserStation) []RadioBrowserResult {
+	results := make([]RadioBrowserResult, 0, len(rows))
+	seen := make(map[string]bool, len(rows))
+
+	for _, r := range rows {
 		streamURL := r.URLResolved
 		if streamURL == "" {
 			streamURL = r.URL
 		}
-		if streamURL == "" {
+		if streamURL == "" || seen[streamURL] {
 			continue
 		}
 
@@ -82,6 +91,7 @@ func SearchRadioBrowser(query string) ([]RadioBrowserResult, error) {
 		if name == "" {
 			continue
 		}
+		seen[streamURL] = true
 
 		var tags []string
 		if r.Tags != "" {
@@ -100,7 +110,7 @@ func SearchRadioBrowser(query string) ([]RadioBrowserResult, error) {
 		})
 	}
 
-	return results, nil
+	return results
 }
 
 func radioBrowserServer() (string, error) {

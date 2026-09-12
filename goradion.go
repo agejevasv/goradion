@@ -12,7 +12,7 @@ var cfg = flag.String("s", "", "A link or a path to a stations.csv file")
 var ver = flag.Bool("v", false, "Show the version number and quit")
 var dbg = flag.Bool("d", false, "Enable debug log (goradion.log file in a current dir)")
 var chk = flag.Bool("c", false, "")
-
+var port = flag.Int("p", 7373, "Preferred port for the remote control web server (Ctrl+P)")
 
 func main() {
 	flag.Parse()
@@ -39,7 +39,7 @@ func main() {
 	go player.Start()
 	defer player.Quit()
 
-	if err := radio.NewApp(player, stations).Run(); err != nil {
+	if err := radio.NewApp(player, stations, *port).Run(); err != nil {
 		panic(err)
 	}
 }

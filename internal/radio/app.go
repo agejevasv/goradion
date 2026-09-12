@@ -40,6 +40,9 @@ const (
 	[green]Ctrl+R[-]
 		Toggle shuffle mode (plays a random station at timed intervals).
 
+	[green]Ctrl+P[-]
+		Remote control: show a QR code to control goradion from a phone.
+
 	[green]Alt+1[-] to [green]Alt+9[-]
 		Set shuffle interval to 1-9 minutes and reset timer.
 
@@ -69,6 +72,7 @@ const (
 	Help
 	Tags
 	Search
+	RemotePage
 )
 
 type Application struct {
@@ -100,19 +104,28 @@ type Application struct {
 	shuffleInterval         time.Duration
 	waitingForPlayback      chan struct{}
 	waitingForURL           string
+	remote                  *Remote
+	remotePort              int
+	remoteModal             *tview.Flex
+	remoteQR                *tview.TextView
+	remoteText              *tview.TextView
 }
 
-func NewApp(player *Player, stations []Station) *Application {
+// NewApp creates the TUI. remotePort is the preferred port for the remote
+// control server started with Ctrl+P; a free port is used if it is taken.
+func NewApp(player *Player, stations []Station, remotePort int) *Application {
 	a := &Application{
 		player:          player,
 		stations:        stations,
-		pageNames:       []string{"Main", "Help", "Tags", "Search"},
+		pageNames:       []string{"Main", "Help", "Tags", "Search", "Remote"},
 		favorites:       NewFavorites(stations),
 		shuffleInterval: 5 * time.Minute,
+		remotePort:      remotePort,
 	}
 
 	a.setupPages()
 	a.setupSearchModal()
+	a.setupRemoteModal()
 
 	a.app = tview.NewApplication().
 		SetRoot(a.pages, true).
@@ -126,6 +139,7 @@ func NewApp(player *Player, stations []Station) *Application {
 }
 
 func (a *Application) Run() error {
+	defer a.stopRemote()
 	return a.app.Run()
 }
 
@@ -200,6 +214,11 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 				return event
 			}
 
+			if currentPage == a.pageNames[RemotePage] {
+				a.hideRemoteModal()
+				return nil
+			}
+
 			if currentPage == a.pageNames[Tags] {
 				a.app.Stop()
 				return nil
@@ -223,6 +242,12 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			return nil
 		case tcell.KeyCtrlR:
 			go a.toggleTimedRandom()
+			return nil
+		case tcell.KeyCtrlP:
+			if currentPage == a.pageNames[Search] {
+				return event
+			}
+			a.toggleRemoteModal()
 			return nil
 		case tcell.KeyLeft:
 			a.player.VolumeDn()
@@ -255,9 +280,7 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 				}
 				return nil
 			case '~':
-				a.tag = "All Stations"
-				a.filterStationsForSelectedTag()
-				a.show(Main)
+				a.openTag(allStationsTag)
 				return nil
 			case ':':
 				if a.isSearchModalOpen() {
@@ -312,12 +335,10 @@ func (a *Application) setupStationsList(list *tview.List, stations []Station) *t
 	}
 
 	list.AddItem("Random", "", rune('*'), func() {
-		r := rand.Intn(len(stations))
-
-		for len(stations) > 1 && a.player.info.Url == stations[r].url {
-			r = rand.Intn(len(stations))
+		if len(stations) == 0 {
+			return
 		}
-
+		r := a.randomIndex(stations)
 		list.SetCurrentItem(r + offset)
 		go a.togglePlayManual(stations[r])
 	})
@@ -342,17 +363,13 @@ func (a *Application) setupTagsList() *tview.List {
 
 	if a.favorites.hasFavorites() {
 		tagsList = tagsList.AddItem(favoritesTag, "", rune('$'), func() {
-			a.tag = favoritesTag
-			a.filterStationsForSelectedTag()
-			a.show(Main)
+			a.openTag(favoritesTag)
 		})
 	}
 
 	for i := range tags {
 		tagsList = tagsList.AddItem(tags[i], "", idxToRune(i), func() {
-			a.tag = tags[i]
-			a.filterStationsForSelectedTag()
-			a.show(Main)
+			a.openTag(tags[i])
 		})
 	}
 
@@ -362,15 +379,7 @@ func (a *Application) setupTagsList() *tview.List {
 			label += " [gray](online)[-]"
 		}
 		tagsList = tagsList.AddItem(label, "", rune('^'), func() {
-			var matchedStations []Station
-			if a.lastOnlineStations != nil {
-				matchedStations = a.lastOnlineStations
-			} else {
-				matchedStations = a.filterStations(a.lastSearchTag)
-			}
-			a.tag = a.lastSearchTag
-			a.setupStationsList(a.stationsList, matchedStations)
-			a.show(Main)
+			a.openTag(a.lastSearchTag)
 		})
 	}
 
@@ -381,6 +390,40 @@ func (a *Application) setupTagsList() *tview.List {
 	}
 
 	return tagsList
+}
+
+// openTag shows the station list for a tags-page entry: Favorites, All
+// Stations, a station tag or the last search. It reports whether tag is known.
+func (a *Application) openTag(tag string) bool {
+	switch {
+	case tag == a.lastSearchTag && tag != "":
+		var matchedStations []Station
+		if a.lastOnlineStations != nil {
+			matchedStations = a.lastOnlineStations
+		} else {
+			matchedStations = a.filterStations(a.lastSearchTag)
+		}
+		a.tag = a.lastSearchTag
+		a.setupStationsList(a.stationsList, matchedStations)
+	case tag == favoritesTag && a.favorites.hasFavorites(),
+		tag == allStationsTag,
+		slices.Contains(tags(a.stations), tag):
+		a.tag = tag
+		a.filterStationsForSelectedTag()
+	default:
+		return false
+	}
+	a.show(Main)
+	return true
+}
+
+// randomIndex picks a station index, avoiding the one playing when possible.
+func (a *Application) randomIndex(stations []Station) int {
+	r := rand.Intn(len(stations))
+	for len(stations) > 1 && a.player.info.Url == stations[r].url {
+		r = rand.Intn(len(stations))
+	}
+	return r
 }
 
 func (a *Application) togglePlay(station Station) {
@@ -410,7 +453,7 @@ func (a *Application) getStationsFromCurrentView() []Station {
 		return a.favorites.getFavoriteStations()
 	}
 
-	if a.tag == "All Stations" {
+	if a.tag == allStationsTag {
 		return a.stations
 	}
 
@@ -437,7 +480,7 @@ func (a *Application) filterStationsForSelectedTag() {
 		match = a.favorites.getFavoriteStations()
 	} else {
 		for i := 0; i < len(a.stations); i++ {
-			if a.tag == "All Stations" || slices.Contains(a.stations[i].tags, a.tag) {
+			if a.tag == allStationsTag || slices.Contains(a.stations[i].tags, a.tag) {
 				match = append(match, a.stations[i])
 			}
 		}

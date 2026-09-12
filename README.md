@@ -57,3 +57,23 @@ OR
 
 goradion -s https://path-to/stations.csv
 ```
+
+## Remote control
+Press `Ctrl+P` to control goradion from a phone. It starts a small web server on all
+interfaces and shows a QR code, the address and a 6-character access code. Scan the QR
+code with the phone camera, or open the address in the phone browser and type the code.
+The phone has to be on the same network as the computer.
+
+The page has the same tags, station lists, search, volume and shuffle controls as the
+TUI. Whatever you tap on the phone is reflected in the TUI and vice versa.
+
+The code changes every time goradion starts, so knowing the IP alone is not enough to
+control the player; the phone asks for the new code when it changes. Press `Ctrl+P`
+again at any time to see the QR code and the code again. The server is shut down when
+goradion exits.
+
+The server prefers port `7373` and falls back to a free port if it is taken; choose a
+different preferred port with `-p`:
+```bash
+goradion -p 8080
+```

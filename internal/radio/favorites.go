@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -42,6 +43,7 @@ type Favorites struct {
 	Stations          map[string]*FavoriteStation `json:"stations"`
 	availableStations map[string]bool
 	stationsByURL     map[string]Station
+	mu                sync.Mutex
 }
 
 func NewFavorites(stations []Station) *Favorites {
@@ -86,6 +88,9 @@ func (f *Favorites) track(station Station) {
 		return
 	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	title := station.title
 	if currentStation, ok := f.stationsByURL[station.url]; ok {
 		title = currentStation.title
@@ -107,6 +112,9 @@ func (f *Favorites) track(station Station) {
 }
 
 func (f *Favorites) getFavoriteStations() []Station {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if len(f.Stations) == 0 {
 		return nil
 	}
@@ -152,6 +160,9 @@ func (f *Favorites) getFavoriteStations() []Station {
 }
 
 func (f *Favorites) hasFavorites() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	for _, fav := range f.Stations {
 		if fav.PlayCount >= minPlays {
 			return true
