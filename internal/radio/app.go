@@ -32,10 +32,10 @@ const (
 		Toggle playing a station marked with a given letter (or select a tag).
 
 	[green]Ctrl+F[-] or [green]:[-]
-		Show search to find stations.
+		Search local stations (press again to flip local/online).
 
 	[green]Ctrl+S[-]
-		Search online via radio-browser.info.
+		Search online via radio-browser.info (press again to flip online/local).
 
 	[green]Ctrl+R[-]
 		Toggle shuffle mode (plays a random station at timed intervals).
@@ -69,7 +69,6 @@ const (
 	Help
 	Tags
 	Search
-	Browse
 )
 
 type Application struct {
@@ -89,12 +88,12 @@ type Application struct {
 	volume                  *tview.TextView
 	favorites               *Favorites
 	searchModal             *tview.Flex
+	searchContent           *tview.Flex
 	searchInput             *tview.InputField
 	searchResults           *tview.List
-	browseModal             *tview.Flex
-	browseInput             *tview.InputField
-	browseResults           *tview.List
-	lastBrowseStations      []Station
+	searchOnline            bool
+	searchGeneration        int
+	lastOnlineStations      []Station
 	timedRandomActive       bool
 	timedRandomCancel       context.CancelFunc
 	shuffleIterationStartAt time.Time
@@ -107,14 +106,13 @@ func NewApp(player *Player, stations []Station) *Application {
 	a := &Application{
 		player:          player,
 		stations:        stations,
-		pageNames:       []string{"Main", "Help", "Tags", "Search", "Browse"},
+		pageNames:       []string{"Main", "Help", "Tags", "Search"},
 		favorites:       NewFavorites(stations),
 		shuffleInterval: 5 * time.Minute,
 	}
 
 	a.setupPages()
 	a.setupSearchModal()
-	a.setupBrowseModal()
 
 	a.app = tview.NewApplication().
 		SetRoot(a.pages, true).
@@ -198,7 +196,7 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 
 		switch key := event.Key(); key {
 		case tcell.KeyEscape:
-			if currentPage == a.pageNames[Search] || currentPage == a.pageNames[Browse] {
+			if currentPage == a.pageNames[Search] {
 				return event
 			}
 
@@ -218,10 +216,10 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			}
 			return nil
 		case tcell.KeyCtrlF:
-			a.showSearchModal()
+			a.showSearchModal(false)
 			return nil
 		case tcell.KeyCtrlS:
-			a.showBrowseModal()
+			a.showSearchModal(true)
 			return nil
 		case tcell.KeyCtrlR:
 			go a.toggleTimedRandom()
@@ -262,7 +260,10 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 				a.show(Main)
 				return nil
 			case ':':
-				a.showSearchModal()
+				if a.isSearchModalOpen() {
+					return event
+				}
+				a.showSearchModal(false)
 				return nil
 			}
 		}
@@ -356,10 +357,14 @@ func (a *Application) setupTagsList() *tview.List {
 	}
 
 	if a.lastSearchTag != "" {
-		tagsList = tagsList.AddItem(a.lastSearchTag, "", rune('^'), func() {
+		label := a.lastSearchTag
+		if a.lastOnlineStations != nil {
+			label += " [gray](online)[-]"
+		}
+		tagsList = tagsList.AddItem(label, "", rune('^'), func() {
 			var matchedStations []Station
-			if a.lastBrowseStations != nil {
-				matchedStations = a.lastBrowseStations
+			if a.lastOnlineStations != nil {
+				matchedStations = a.lastOnlineStations
 			} else {
 				matchedStations = a.filterStations(a.lastSearchTag)
 			}
@@ -410,8 +415,8 @@ func (a *Application) getStationsFromCurrentView() []Station {
 	}
 
 	if a.tag == a.lastSearchTag && a.lastSearchTag != "" {
-		if a.lastBrowseStations != nil {
-			return a.lastBrowseStations
+		if a.lastOnlineStations != nil {
+			return a.lastOnlineStations
 		}
 		return a.filterStations(a.tag)
 	}
