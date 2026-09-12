@@ -100,7 +100,6 @@ const defaultStationsCSV = `FluxFM: Jazzradio Schwarzenstein,https://streams.flu
 	MaXXima,http://maxxima.mine.nu:8000/maxx.ogg,House;Electronic
 	Radio Sputnik Underground!,https://radiosputnik.nl:8443/flac,Electronic;House
 	freeCodeCamp: Code Radio,https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3,Chillhop;Downtempo
-	Chillsky,https://chill.radioca.st/stream,Chillhop;Downtempo
 	ChristmasFM: Classics,https://christmasfm.cdnstream1.com/2550_128.mp3,Xmas
 	Radio Santa Claus,https://streaming.radiostreamlive.com/radiosantaclaus_devices,Xmas
 	KCRW Eclectic24,https://streams.kcrw.com/e24_mp3,Eclectic;Pop
