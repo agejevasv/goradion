@@ -15,7 +15,7 @@ import (
 
 // newTestApp runs the TUI on a simulation screen. mpv is not needed: player
 // commands fail softly when the socket is missing.
-func newTestApp(t *testing.T) (*Application, tcell.SimulationScreen) {
+func newTestApp(t *testing.T, options ...Option) (*Application, tcell.SimulationScreen) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	InitLog(false)
@@ -26,7 +26,7 @@ func newTestApp(t *testing.T) (*Application, tcell.SimulationScreen) {
 	}
 	screen.SetSize(100, 30)
 
-	a := NewApp(NewPlayer(), Stations(""), 0)
+	a := NewApp(NewPlayer(), Stations(""), 0, options...)
 	a.app.SetScreen(screen)
 	done := make(chan struct{})
 	go func() {
@@ -119,6 +119,75 @@ func (c client) do(method, path string, body any) (int, remoteState) {
 		}
 	}
 	return resp.StatusCode, st
+}
+
+func TestRemoteStartupKey(t *testing.T) {
+	status := func(t *testing.T, r *Remote, key string) int {
+		t.Helper()
+		req, _ := http.NewRequest("GET", fmt.Sprintf("http://127.0.0.1:%d/api/state", r.port), nil)
+		req.Header.Set("X-Key", key)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	started := func(t *testing.T, key *string) (*Application, tcell.SimulationScreen, *Remote) {
+		t.Helper()
+		a, screen := newTestApp(t, WithRemote(key))
+		r := onUI(a, func() *Remote { return a.remote })
+		if r == nil {
+			t.Fatal("WithRemote must start the server with the app")
+		}
+		if onUI(a, a.isRemoteModalOpen) {
+			t.Fatal("autostart must not open the modal")
+		}
+		return a, screen, r
+	}
+
+	t.Run("generated", func(t *testing.T) {
+		_, _, r := started(t, nil)
+		if len(r.Key()) != tokenLength {
+			t.Fatalf("key %q, want a random %d-character code", r.Key(), tokenLength)
+		}
+	})
+
+	t.Run("custom", func(t *testing.T) {
+		key := "Correct Horse [battery] staple"
+		a, screen, r := started(t, &key)
+		if r.Key() != key {
+			t.Fatalf("key %q, want %q", r.Key(), key)
+		}
+		if !strings.HasSuffix(r.URL(), "/?k=Correct+Horse+%5Bbattery%5D+staple") {
+			t.Fatalf("URL %q does not carry the key", r.URL())
+		}
+		for k, want := range map[string]int{key: 200, strings.ToLower(key): 200, "": 403, "correct": 403} {
+			if got := status(t, r, k); got != want {
+				t.Errorf("key %q: status %d, want %d", k, got, want)
+			}
+		}
+		screen.InjectKey(tcell.KeyCtrlP, 0, tcell.ModNone)
+		waitFor(t, "modal with the key", func() bool { return strings.Contains(screenText(screen), "[battery]") })
+		if onUI(a, func() *Remote { return a.remote }) != r {
+			t.Fatal("Ctrl+P must reuse the started server")
+		}
+	})
+
+	t.Run("none", func(t *testing.T) {
+		key := ""
+		_, screen, r := started(t, &key)
+		if r.URL() != r.Address() {
+			t.Fatalf("URL %q, want %q", r.URL(), r.Address())
+		}
+		for _, k := range []string{"", "anything"} {
+			if got := status(t, r, k); got != 200 {
+				t.Errorf("key %q: status %d, want 200", k, got)
+			}
+		}
+		screen.InjectKey(tcell.KeyCtrlP, 0, tcell.ModNone)
+		waitFor(t, "no-code warning", func() bool { return strings.Contains(screenText(screen), "No access code") })
+	})
 }
 
 func TestRemoteControl(t *testing.T) {

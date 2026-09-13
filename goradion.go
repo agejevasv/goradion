@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/agejevasv/goradion/internal/radio"
 )
@@ -13,9 +14,16 @@ var ver = flag.Bool("v", false, "Show the version number and quit")
 var dbg = flag.Bool("d", false, "Enable debug log (goradion.log file in a current dir)")
 var chk = flag.Bool("c", false, "")
 var port = flag.Int("p", 7373, "Preferred port for the remote control web server (Ctrl+P)")
+var ascii = flag.Bool("ascii", false, "Draw plain ASCII symbols, for terminals without Unicode fonts")
+var noVU = flag.Bool("no-vu", false, "Hide the audio meter")
+var remote remoteFlag
+
+func init() {
+	flag.Var(&remote, "r", "Start the remote control web server at launch, with an optional access `key` (\"\" for none)")
+}
 
 func main() {
-	flag.Parse()
+	flag.CommandLine.Parse(markOptionalValue(os.Args[1:], "r"))
 
 	if *ver {
 		fmt.Println(radio.VersionString())
@@ -36,10 +44,76 @@ func main() {
 	}
 
 	player := radio.NewPlayer()
+	if *noVU {
+		player.DisableVU()
+	}
 	go player.Start()
 	defer player.Quit()
 
-	if err := radio.NewApp(player, stations, *port).Run(); err != nil {
+	options := []radio.Option{radio.WithASCII(*ascii)}
+	if remote.on {
+		options = append(options, radio.WithRemote(remote.key))
+	}
+
+	if err := radio.NewApp(player, stations, *port, options...).Run(); err != nil {
 		panic(err)
 	}
+}
+
+// keyPrefix marks a value given on the command line, so that remoteFlag tells
+// "-r" (the flag package passes "true") from "-r true" or "-r=".
+const keyPrefix = "key:"
+
+// remoteFlag is "-r [key]". A missing key leaves key nil.
+type remoteFlag struct {
+	on  bool
+	key *string
+}
+
+func (f *remoteFlag) String() string   { return "" }
+func (f *remoteFlag) IsBoolFlag() bool { return true }
+
+func (f *remoteFlag) Set(v string) error {
+	f.on, f.key = true, nil
+	if key, ok := strings.CutPrefix(v, keyPrefix); ok {
+		f.key = &key
+	}
+	return nil
+}
+
+// markOptionalValue rewrites "-name value" and "-name=value" to
+// "-name=key:value". The flag package has no optional values: a bool flag
+// never consumes the next argument. A value starting with "-" must be joined
+// with "=".
+func markOptionalValue(args []string, name string) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" || arg == "-" || !strings.HasPrefix(arg, "-") {
+			return append(out, args[i:]...)
+		}
+		flagName, value, hasValue := strings.Cut(strings.TrimPrefix(strings.TrimPrefix(arg, "-"), "-"), "=")
+		switch {
+		case flagName == name && hasValue:
+			arg = "-" + name + "=" + keyPrefix + value
+		case flagName == name && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-"):
+			i++
+			arg = "-" + name + "=" + keyPrefix + args[i]
+		case !hasValue && takesValue(flagName) && i+1 < len(args):
+			out = append(out, arg)
+			i++
+			arg = args[i]
+		}
+		out = append(out, arg)
+	}
+	return out
+}
+
+func takesValue(name string) bool {
+	f := flag.Lookup(name)
+	if f == nil {
+		return false
+	}
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return !ok || !b.IsBoolFlag()
 }

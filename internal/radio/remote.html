@@ -242,7 +242,7 @@
     <div class="logo"><svg><use href="#i-radio"/></svg></div>
     <h2>Connect to goradion</h2>
     <p>Enter the code shown on the computer.<br>Press <b>Ctrl+P</b> in goradion to see it.</p>
-    <input class="code" id="code" maxlength="6" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" placeholder="······" aria-label="Access code">
+    <input class="code" id="code" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" placeholder="Code" aria-label="Access code">
     <button class="primary" type="submit">Connect</button>
     <p class="err" id="gate-err" hidden></p>
   </form>
@@ -314,7 +314,7 @@
   $('gate-form').addEventListener('submit', e => {
     e.preventDefault();
     key = norm($('code').value);
-    if (key.length < 4) { $('code').classList.add('bad'); return; }
+    if (!key) { $('code').classList.add('bad'); return; }
     connect();
   });
   $('code').addEventListener('input', () => $('code').classList.remove('bad'));

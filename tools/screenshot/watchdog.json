@@ -1,0 +1,4 @@
+[
+  {"keys": "nb", "wait": 2.5, "shot": "watchdog-01-no-readings.png"},
+  {"wait": 3.0, "shot": "watchdog-02-level-meter.png"}
+]

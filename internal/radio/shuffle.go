@@ -2,11 +2,8 @@ package radio
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"time"
-
-	"github.com/gdamore/tcell/v2"
 )
 
 func (a *Application) toggleTimedRandom() {
@@ -22,7 +19,7 @@ func (a *Application) toggleTimedRandom() {
 		a.player.Unlock()
 
 		a.timedRandomActive = false
-		a.updateShuffleBorder()
+		a.publishShuffle()
 		return
 	}
 
@@ -31,9 +28,7 @@ func (a *Application) toggleTimedRandom() {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.timedRandomCancel = cancel
 
-	a.updateShuffleBorder()
-
-	go a.updateCountdown(ctx)
+	a.publishShuffle()
 
 	stations := a.getStationsFromCurrentView()
 	if len(stations) > 0 {
@@ -51,59 +46,36 @@ func (a *Application) toggleTimedRandom() {
 
 func (a *Application) setShuffleInterval(minutes int) {
 	a.shuffleInterval = time.Duration(minutes) * time.Minute
-	if a.timedRandomActive {
-		if a.timedRandomCancel != nil {
-			a.timedRandomCancel()
-		}
-		a.player.Lock()
-		if a.player.fadeCancel != nil {
-			a.player.fadeCancel()
-		}
-		a.player.Unlock()
-
-		a.timedRandomActive = true
-		a.shuffleIterationStartAt = time.Now()
-		ctx, cancel := context.WithCancel(context.Background())
-		a.timedRandomCancel = cancel
-
-		a.updateShuffleBorder()
-
-		go a.updateCountdown(ctx)
-		go a.timedRandomLoop(ctx)
+	if !a.timedRandomActive {
+		a.publishShuffle()
+		return
 	}
+
+	if a.timedRandomCancel != nil {
+		a.timedRandomCancel()
+	}
+	a.player.Lock()
+	if a.player.fadeCancel != nil {
+		a.player.fadeCancel()
+	}
+	a.player.Unlock()
+
+	a.shuffleIterationStartAt = time.Now()
+	ctx, cancel := context.WithCancel(context.Background())
+	a.timedRandomCancel = cancel
+
+	a.publishShuffle()
+
+	go a.timedRandomLoop(ctx)
 }
 
-func (a *Application) updateShuffleBorder() {
+// publishShuffle must be called by the goroutine that changed the shuffle
+// state, never by the UI goroutine.
+func (a *Application) publishShuffle() {
+	active, start, interval := a.timedRandomActive, a.shuffleIterationStartAt, a.shuffleInterval
 	a.app.QueueUpdateDraw(func() {
-		if a.timedRandomActive {
-			elapsed := time.Since(a.shuffleIterationStartAt)
-			remaining := max(a.shuffleInterval-elapsed, 0)
-			minutes := int(remaining.Minutes())
-			seconds := int(remaining.Seconds()) % 60
-			countdown := fmt.Sprintf("%02d:%02d", minutes, seconds)
-
-			title := fmt.Sprintf(" [red]🔀[-] Shuffle %s ", countdown)
-			a.mainFlex.SetBorder(true).SetBorderColor(tcell.ColorWhite).SetBackgroundColor(tcell.ColorDefault).SetTitle(title)
-			a.tagsFlex.SetBorder(true).SetBorderColor(tcell.ColorWhite).SetBackgroundColor(tcell.ColorDefault).SetTitle(title)
-		} else {
-			a.mainFlex.SetBorder(false).SetBackgroundColor(tcell.ColorBlack)
-			a.tagsFlex.SetBorder(false).SetBackgroundColor(tcell.ColorBlack)
-		}
+		a.card.shuffleActive, a.card.shuffleStart, a.card.shuffleInterval = active, start, interval
 	})
-}
-
-func (a *Application) updateCountdown(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			a.updateShuffleBorder()
-		}
-	}
 }
 
 func (a *Application) timedRandomLoop(ctx context.Context) {
@@ -143,6 +115,7 @@ func (a *Application) timedRandomLoop(ctx context.Context) {
 				a.waitingForURL = stations[r].url
 				go a.togglePlay(stations[r])
 				a.shuffleIterationStartAt = time.Now()
+				a.publishShuffle()
 
 				select {
 				case <-a.waitingForPlayback:

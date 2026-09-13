@@ -256,7 +256,7 @@ func fetchStations(url string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("Failed to GET %s, status code: %d", url, resp.StatusCode)
+		return "", fmt.Errorf("failed to GET %s, status code: %d", url, resp.StatusCode)
 	}
 
 	data, err := io.ReadAll(resp.Body)

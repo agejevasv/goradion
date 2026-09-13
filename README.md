@@ -4,7 +4,7 @@ Goradion is a TUI radio player based on `mpv`.
 You can listen to a curated list of stations or search for more online via radio-browser.info.
 
 <p align="center">
-  <img alt="goradion" src="https://github.com/user-attachments/assets/1a86f861-10ed-4ad5-b90e-f48c4278c317">
+  <img alt="goradion" src="docs/screenshot.png">
 </p>
 
 
@@ -76,4 +76,12 @@ The server prefers port `7373` and falls back to a free port if it is taken; cho
 different preferred port with `-p`:
 ```bash
 goradion -p 8080
+```
+
+Start the server together with goradion with `-r`. It takes an optional access code of
+any length; `""` turns the code off, so anyone on the network can control the player:
+```bash
+goradion -r                  # random code, as with Ctrl+P
+goradion -r "my secret code" # a fixed code, handy for a bookmarked phone
+goradion -r ""               # no code
 ```
