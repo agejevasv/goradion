@@ -352,6 +352,9 @@ func (a *Application) remoteShowTags(actionRequest) error {
 }
 
 func (a *Application) remoteOpenTag(q actionRequest) error {
+	if q.Tag == favoritesTag && !a.favorites.hasFavorites() {
+		return fmt.Errorf("tag %q %w", q.Tag, errNotFound)
+	}
 	var err error
 	a.app.QueueUpdateDraw(func() {
 		if !a.openTag(q.Tag) {

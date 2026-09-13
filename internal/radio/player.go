@@ -5,11 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,6 +32,11 @@ type Player struct {
 	retry       *Retry
 	savedVolume int
 	fadeCancel  context.CancelFunc
+
+	// Atomic, because the UI must never take the player lock.
+	vu        atomic.Int32 // a vuState
+	levelBits atomic.Uint64
+	levelAt   atomic.Int64
 }
 
 type Info struct {
@@ -38,7 +47,43 @@ type Info struct {
 	Url      string
 	Volume   int
 	Bitrate  int
+	// Replaced, never modified in place, so copies of Info can share it.
+	History []Track
 }
+
+type Track struct {
+	Time    time.Time
+	Station string
+	Song    string
+}
+
+const historySize = 20
+
+type vuState int32
+
+const (
+	vuPending vuState = iota
+	vuTrying
+	vuOn
+	vuUnavailable
+	vuOff
+)
+
+// The level filter is added once audio plays: mpv then refuses a bad filter
+// and plays on, while a bad filter given at start-up or while idle makes every
+// station fail. The first variant needs FFmpeg 5, the second works with older.
+const vuFilterLabel = "goradionvu"
+
+var vuFilters = []string{
+	"@" + vuFilterLabel + ":lavfi=[astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=RMS_level]",
+	"@" + vuFilterLabel + ":lavfi=[astats=metadata=1:reset=1]",
+}
+
+const (
+	vuRequestID     = 7300 // + index into vuFilters
+	vuRemoveRequest = 7399
+	vuFloorDB       = -32.0
+)
 
 type Retry struct {
 	ctx    context.Context
@@ -232,9 +277,11 @@ func (p *Player) Toggle(station Station) {
 	p.retry = &Retry{ctx: ctx, cancel: cancel}
 
 	p.info.Station = station.title
+	p.info.Url = station.url
 	p.info.Status = buffering
 	p.info.Bitrate = 0
 	p.info.Song = ""
+	p.info.PrevSong = ""
 	p.Info <- *p.info
 
 	p.Load(station.url)
@@ -289,21 +336,31 @@ func (p *Player) readMPVEvents() {
 		fmt.Sprintf(`{"command": ["observe_property", 1, "pause"]}%s`, "\n"),
 	}
 
+	if vuState(p.vu.Load()) != vuOff {
+		cmds = append(cmds, fmt.Sprintf(`{"command": ["observe_property", 1, "af-metadata/%s"]}%s`, vuFilterLabel, "\n"))
+	}
+
 	for _, cmd := range cmds {
 		if _, err = c.Write([]byte(cmd)); err != nil {
 			log.Println(err)
 		}
 	}
 
+	// A new reader per line would drop messages that mpv sends together.
+	reader := bufio.NewReader(c)
 	for {
-		eventBytes, err := bufio.NewReader(c).ReadBytes([]byte("\n")[0])
+		eventBytes, err := reader.ReadBytes('\n')
 
 		if err != nil {
-			log.Println(err)
-			continue
+			log.Println("mpv events:", err)
+			return
 		}
 
 		rsp := unmarshal(eventBytes)
+
+		if p.handleVU(c, rsp) {
+			continue
+		}
 
 		if eventIs(rsp, "property-change") && nameIs(rsp, "audio-bitrate") {
 			br, ok := rsp["data"].(float64)
@@ -326,6 +383,14 @@ func (p *Player) readMPVEvents() {
 
 		if eventIs(rsp, "playback-restart") && p.info.Status == buffering {
 			p.setStatusPlaying()
+		}
+
+		if eventIs(rsp, "playback-restart") {
+			p.installVU(c)
+		}
+
+		if eventIs(rsp, "end-file") && reasonIsAnyOf(rsp, "error") {
+			p.suspectVU(c)
 		}
 
 		if eventIs(rsp, "property-change") && nameIs(rsp, "filtered-metadata") {
@@ -397,6 +462,7 @@ func (p *Player) setCurrentSong(m map[string]any) {
 		p.info.PrevSong = song
 		p.info.Status = ""
 		p.info.Song = song
+		p.info.History = appendTrack(p.info.History, Track{Time: time.Now(), Station: stripPlayCount(p.info.Station), Song: song})
 		p.Info <- *p.info
 	}
 }
@@ -452,4 +518,106 @@ func nameIs(m map[string]any, needle ...string) bool {
 	}
 
 	return slices.Contains(needle, m["name"].(string))
+}
+
+// DisableVU must be called before Start.
+func (p *Player) DisableVU() {
+	p.vu.Store(int32(vuOff))
+}
+
+// Level is between 0 and 1; ok is false when the meter is off or unsupported.
+func (p *Player) Level() (level float64, at time.Time, ok bool) {
+	switch vuState(p.vu.Load()) {
+	case vuOff, vuUnavailable:
+		return 0, time.Time{}, false
+	}
+	if nanos := p.levelAt.Load(); nanos != 0 {
+		at = time.Unix(0, nanos)
+	}
+	return math.Float64frombits(p.levelBits.Load()), at, true
+}
+
+// installVU writes to the event connection so that mpv's reply reaches handleVU.
+func (p *Player) installVU(c io.Writer) {
+	if p.vu.CompareAndSwap(int32(vuPending), int32(vuTrying)) {
+		writeCommand(c, vuRequestID, "af", "add", vuFilters[0])
+	}
+}
+
+// suspectVU removes the filter after a stream error in case it was the cause;
+// the next playback start adds it back, which mpv refuses if it was.
+func (p *Player) suspectVU(c io.Writer) {
+	if p.vu.CompareAndSwap(int32(vuOn), int32(vuPending)) {
+		writeCommand(c, vuRemoveRequest, "af", "remove", "@"+vuFilterLabel)
+		p.levelAt.Store(0)
+	}
+}
+
+func (p *Player) handleVU(c io.Writer, rsp map[string]any) bool {
+	if eventIs(rsp, "property-change") && nameIs(rsp, "af-metadata/"+vuFilterLabel) {
+		if meta, ok := rsp["data"].(map[string]any); ok {
+			if level, ok := levelFromMetadata(meta); ok {
+				p.levelBits.Store(math.Float64bits(level))
+				p.levelAt.Store(time.Now().UnixNano())
+			}
+		}
+		return true
+	}
+
+	id, ok := rsp["request_id"].(float64)
+	if !ok || int(id) < vuRequestID || int(id) > vuRemoveRequest {
+		return false
+	}
+	variant := int(id) - vuRequestID
+	switch {
+	case int(id) == vuRemoveRequest:
+		log.Printf("level meter: filter removed (%v)", rsp["error"])
+	case rsp["error"] == "success":
+		p.vu.CompareAndSwap(int32(vuTrying), int32(vuOn))
+		log.Printf("level meter: filter variant %d installed", variant)
+	case variant+1 < len(vuFilters):
+		log.Printf("level meter: filter variant %d refused (%v)", variant, rsp["error"])
+		writeCommand(c, vuRequestID+variant+1, "af", "add", vuFilters[variant+1])
+	default:
+		log.Printf("level meter: unavailable (%v)", rsp["error"])
+		p.vu.CompareAndSwap(int32(vuTrying), int32(vuUnavailable))
+	}
+	return true
+}
+
+func levelFromMetadata(meta map[string]any) (float64, bool) {
+	s, ok := meta["lavfi.astats.Overall.RMS_level"].(string)
+	if !ok {
+		return 0, false
+	}
+	db, err := strconv.ParseFloat(strings.TrimSpace(s), 64) // Silence is "-inf".
+	if err != nil {
+		return 0, false
+	}
+	return dbToLevel(db), true
+}
+
+func dbToLevel(db float64) float64 {
+	if math.IsNaN(db) {
+		return 0
+	}
+	return min(max(1-db/vuFloorDB, 0), 1)
+}
+
+func appendTrack(history []Track, t Track) []Track {
+	start := max(len(history)+1-historySize, 0)
+	out := make([]Track, 0, len(history)+1-start)
+	out = append(out, history[start:]...)
+	return append(out, t)
+}
+
+func writeCommand(c io.Writer, requestID int, command ...string) {
+	b, err := json.Marshal(map[string]any{"command": command, "request_id": requestID})
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if _, err := c.Write(append(b, '\n')); err != nil {
+		log.Println(err)
+	}
 }

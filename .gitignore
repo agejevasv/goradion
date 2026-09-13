@@ -25,3 +25,6 @@ go.work
 goradion
 goradion.log
 goradion.exe
+
+# Output of tools/screenshot/shots.sh
+screenshots/

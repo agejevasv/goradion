@@ -4,7 +4,7 @@ Goradion is a TUI radio player based on `mpv`.
 You can listen to a curated list of stations or search for more online via radio-browser.info.
 
 <p align="center">
-  <img alt="goradion" src="https://github.com/user-attachments/assets/1a86f861-10ed-4ad5-b90e-f48c4278c317">
+  <img alt="goradion" src="docs/screenshot.png">
 </p>
 
 

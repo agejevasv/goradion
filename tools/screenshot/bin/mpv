@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""A stand-in for mpv that speaks just enough JSON IPC for goradion's UI.
+
+No audio is played. After "loadfile" it reports a bitrate, playback start and
+track titles, and it answers the audio-level filter goradion installs with a
+smooth, music-like level stream so the VU meter moves.
+
+Environment knobs:
+  FAKEMPV_BUFFER=0.6      seconds of "buffering" before playback starts
+  FAKEMPV_META=0.8        seconds after playback until the first title
+  FAKEMPV_SONG=0          seconds between title changes (0: never)
+  FAKEMPV_VU=1            0 makes the level filter fail, like an old FFmpeg
+  FAKEMPV_TITLE=...       force this title for every station
+"""
+import json, math, os, random, socket, sys, threading, time, zlib
+
+TITLES = [
+    "Neon Harbor - Night Drive",
+    "The Slow Mornings - Coffee & Rain",
+    "Lena Hart Trio - Autumn Leaves (Live at the Blue Room)",
+    "Kasimir - Paper Lanterns",
+    "Velvet Transmission Orchestra feat. Nora Quinn - Midnight Radio Session (Extended Late Night Version)",
+    "Juniper Fields - Warm Static",
+    "Moss & Ember - Kettle Song",
+    "Solar Tapes - Cassette Summer",
+]
+BITRATES = [128000, 192000, 256000, 320000]
+
+sock_path = next(a.split("=", 1)[1] for a in sys.argv if a.startswith("--input-ipc-server="))
+try:
+    os.unlink(sock_path)
+except FileNotFoundError:
+    pass
+server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+server.bind(sock_path)
+server.listen(16)
+
+lock = threading.Lock()
+observers = {}          # property name -> list of connections
+state = {"url": None, "generation": 0, "vu": False}
+env = lambda k, d: float(os.environ.get(k, d))
+
+
+def send(conn, obj):
+    try:
+        conn.sendall((json.dumps(obj) + "\n").encode())
+    except OSError:
+        pass
+
+
+def emit(name, data):
+    with lock:
+        conns = list(observers.get(name, []))
+    for conn in conns:
+        send(conn, {"event": "property-change", "id": 1, "name": name, "data": data})
+
+
+def emit_event(obj):
+    with lock:
+        conns = {c for lst in observers.values() for c in lst}
+    for conn in conns:
+        send(conn, obj)
+
+
+def play(url, generation):
+    h = zlib.crc32(url.encode())
+    time.sleep(env("FAKEMPV_BUFFER", 0.6))
+    if state["generation"] != generation:
+        return
+    emit("audio-bitrate", BITRATES[h % len(BITRATES)])
+    emit_event({"event": "playback-restart"})
+    time.sleep(env("FAKEMPV_META", 0.8))
+    song, index = env("FAKEMPV_SONG", 0), h % len(TITLES)
+    while state["generation"] == generation:
+        title = os.environ.get("FAKEMPV_TITLE") or TITLES[index % len(TITLES)]
+        emit("filtered-metadata", {"icy-title": title})
+        if song <= 0:
+            return
+        time.sleep(song)
+        index += 1
+
+
+def levels():
+    start = time.time()
+    while True:
+        time.sleep(0.1)
+        if not (state["vu"] and state["url"]):
+            continue
+        t = time.time() - start
+        beat = 1.0 if (t % 0.5) < 0.12 else 0.0
+        rms = -16 + 6 * math.sin(t * 2 * math.pi * 0.23) + 5 * beat + random.uniform(-2.5, 2.5)
+        with lock:
+            names = [n for n in observers if n.startswith("af-metadata/")]
+        for name in names:
+            emit(name, {"lavfi.astats.Overall.RMS_level": f"{rms:.6f}"})
+
+
+def handle(conn):
+    buf = b""
+    while True:
+        try:
+            chunk = conn.recv(65536)
+        except OSError:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            cmd, rid = msg.get("command", []), msg.get("request_id", 0)
+            reply = {"error": "success", "request_id": rid}
+            name = cmd[0] if cmd else ""
+            if name == "observe_property":
+                with lock:
+                    observers.setdefault(cmd[2], []).append(conn)
+                if cmd[2] == "pause":
+                    send(conn, {"event": "property-change", "id": cmd[1], "name": "pause", "data": False})
+            elif name == "loadfile":
+                state["generation"] += 1
+                state["url"] = cmd[1]
+                threading.Thread(target=play, args=(cmd[1], state["generation"]), daemon=True).start()
+            elif name == "stop":
+                state["generation"] += 1
+                state["url"] = None
+                emit_event({"event": "end-file", "reason": "stop"})
+            elif name == "af":
+                if os.environ.get("FAKEMPV_VU", "1") == "0":
+                    reply = {"error": "error running command", "request_id": rid}
+                else:
+                    state["vu"] = True
+            elif name == "quit":
+                os._exit(0)
+            send(conn, reply)
+
+
+threading.Thread(target=levels, daemon=True).start()
+while True:
+    conn, _ = server.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()

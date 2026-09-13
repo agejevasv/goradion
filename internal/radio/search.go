@@ -25,7 +25,10 @@ func (a *Application) setupSearchModal() {
 			}
 		})
 
-	a.searchInput.SetFieldBackgroundColor(tcell.ColorBlack)
+	a.searchInput.SetFieldBackgroundColor(tcell.ColorDefault)
+	a.searchInput.SetFieldTextColor(colorText)
+	a.searchInput.SetPlaceholder("station name or tag")
+	a.searchInput.SetPlaceholderStyle(styleDim)
 	a.searchInput.SetBackgroundColor(tcell.ColorDefault)
 
 	a.searchInput.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
@@ -73,7 +76,10 @@ func (a *Application) setupSearchModal() {
 		AddItem(a.searchInput, 1, 0, true).
 		AddItem(a.searchResults, 0, 1, false)
 
-	a.searchContent.SetBorder(true).SetBackgroundColor(tcell.ColorDefault)
+	// Pad the children, not the frame: a Flex does not clear its background.
+	a.searchInput.SetBorderPadding(0, 0, 1, 1)
+	a.searchResults.SetBorderPadding(0, 0, 1, 1)
+	a.searchContent.SetBorder(true).SetTitleAlign(tview.AlignLeft).SetBackgroundColor(tcell.ColorDefault)
 	a.applySearchMode()
 
 	a.searchModal = tview.NewFlex().SetDirection(tview.FlexRow).
@@ -225,7 +231,7 @@ func (a *Application) renderSearchResults(query string, results []searchResult, 
 
 	if len(results) == 0 {
 		if query != "" {
-			a.searchResults.AddItem("No stations found", "", rune('!'), nil)
+			a.searchResults.AddItem("[gray]No stations match[-]", "", 0, nil)
 		}
 		return
 	}

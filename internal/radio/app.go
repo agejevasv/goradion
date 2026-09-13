@@ -8,6 +8,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -17,53 +18,60 @@ import (
 const (
 	favoritesTag = "Favorites"
 	fadeDuration = 2 * time.Second
-	helpString   = `Keyboard Control
-
-	[green]*[-]
-		Toggle playing a random station.
-
-	[green]#[-] or [green]/[-]
-		Show tag selection screen.
-
-	[green]~[-]
-		Show all stations (ignore tags).
-
-	[green]a[-]-[green]z[-] and [green]A[-]-[green]Z[-]
-		Toggle playing a station marked with a given letter (or select a tag).
-
-	[green]Ctrl+F[-] or [green]:[-]
-		Search local stations (press again to flip local/online).
-
-	[green]Ctrl+S[-]
-		Search online via radio-browser.info (press again to flip online/local).
-
-	[green]Ctrl+R[-]
-		Toggle shuffle mode (plays a random station at timed intervals).
-
-	[green]Ctrl+P[-]
-		Remote control: show a QR code to control goradion from a phone.
-
-	[green]Alt+1[-] to [green]Alt+9[-]
-		Set shuffle interval to 1-9 minutes and reset timer.
-
-	[green]Enter[-] and [green]Space[-]
-		Toggle playing currently selected station.
-
-	[green]Left[-] and [green]Right[-], [green]-[-] and [green]+[-]
-		Change the volume in increments of 5.
-
-	[green]Up[-] and [green]Down[-]
-		Cycle through the radio station list.
-
-	[green]PgUp[-] and [green]PgDown[-]
-		Jump to a beginning/end of a station list.
-
-	[green]Esc[-]
-		Close current window.
-
-	[green]?[-]
-		Show help screen.`
 )
+
+type Option func(*Application)
+
+// WithASCII(false) keeps the automatic choice made by detectASCII.
+func WithASCII(on bool) Option {
+	return func(a *Application) { a.ascii = a.ascii || on }
+}
+
+func helpText() string {
+	arrows := glyphs.left + " " + glyphs.right + " - +"
+	sections := []struct {
+		title string
+		keys  [][2]string
+	}{
+		{"Playing", [][2]string{
+			{"a-z A-Z", "play or stop the station with that letter"},
+			{"Enter Space", "play or stop the station under the cursor"},
+			{"*", "play a random station from the list"},
+			{arrows, "volume down or up"},
+			{"Ctrl+R", "shuffle: a random station every few minutes"},
+			{"Alt+1 to 9", "shuffle interval in minutes"},
+		}},
+		{"Finding stations", [][2]string{
+			{"/ #", "tags"},
+			{"~", "all stations"},
+			{"Ctrl+F :", "search your stations; press again to search online"},
+			{"Ctrl+S", "search online at radio-browser.info"},
+			{glyphs.up + " " + glyphs.down + " PgUp PgDn", "move through the list"},
+			{"Tab", "switch between tags and stations (wide terminals)"},
+			{"Esc", "go back; quits from the tags list"},
+		}},
+		{"More", [][2]string{
+			{"Ctrl+P", "control goradion from your phone"},
+			{"?", "this help"},
+			{"Mouse", "click a station to play it, scroll lists; scroll or click the volume gauge"},
+		}},
+		{"Command line", [][2]string{
+			{"-ascii", "plain ASCII symbols for terminals without Unicode fonts"},
+			{"-no-vu", "hide the audio level meter"},
+			{"-s file|url", "stations CSV to use"},
+			{"-p port", "preferred port for the phone remote"},
+		}},
+	}
+	var sb strings.Builder
+	sb.WriteString("[green::b]" + VersionString() + "[-::-]\n")
+	for _, sec := range sections {
+		sb.WriteString("\n[::b]" + sec.title + "[::-]\n")
+		for _, k := range sec.keys {
+			sb.WriteString(fmt.Sprintf("  [green]%-15s[-] %s\n", k[0], k[1]))
+		}
+	}
+	return sb.String()
+}
 
 type Page int
 
@@ -86,10 +94,14 @@ type Application struct {
 	pages                   *tview.Pages
 	stationsList            *tview.List
 	tagsList                *tview.List
+	stationsPane            *listPane
+	tagsPane                *listPane
 	tagsFlex                *tview.Flex
 	mainFlex                *tview.Flex
-	status                  *tview.TextView
-	volume                  *tview.TextView
+	helpFlex                *tview.Flex
+	helpView                *tview.TextView
+	card                    *nowPlaying
+	hints                   *hintBar
 	favorites               *Favorites
 	searchModal             *tview.Flex
 	searchContent           *tview.Flex
@@ -109,11 +121,20 @@ type Application struct {
 	remoteModal             *tview.Flex
 	remoteQR                *tview.TextView
 	remoteText              *tview.TextView
+
+	ascii             bool
+	wide              bool
+	layoutReady       bool
+	syncingTags       bool // suppresses the tags list's changed callback
+	tagRows           []string
+	stationRows       []string
+	stationsBackLink  bool
+	emptyStationsText string
 }
 
 // NewApp creates the TUI. remotePort is the preferred port for the remote
 // control server started with Ctrl+P; a free port is used if it is taken.
-func NewApp(player *Player, stations []Station, remotePort int) *Application {
+func NewApp(player *Player, stations []Station, remotePort int, options ...Option) *Application {
 	a := &Application{
 		player:          player,
 		stations:        stations,
@@ -121,17 +142,24 @@ func NewApp(player *Player, stations []Station, remotePort int) *Application {
 		favorites:       NewFavorites(stations),
 		shuffleInterval: 5 * time.Minute,
 		remotePort:      remotePort,
+		ascii:           detectASCII(),
 	}
+	for _, option := range options {
+		option(a)
+	}
+	applyTheme(a.ascii)
 
 	a.setupPages()
+	a.card.info.Volume = player.info.Volume
 	a.setupSearchModal()
 	a.setupRemoteModal()
 
 	a.app = tview.NewApplication().
 		SetRoot(a.pages, true).
 		EnableMouse(true).
-		SetMouseCapture(devNullMouse()).
-		SetInputCapture(a.inputCapture())
+		SetMouseCapture(a.mouseCapture).
+		SetInputCapture(a.inputCapture()).
+		SetBeforeDrawFunc(a.beforeDraw)
 
 	go a.updateStatus()
 
@@ -140,46 +168,43 @@ func NewApp(player *Player, stations []Station, remotePort int) *Application {
 
 func (a *Application) Run() error {
 	defer a.stopRemote()
+	stop := make(chan struct{})
+	defer close(stop)
+	go a.animate(stop)
 	return a.app.Run()
 }
 
 func (a *Application) setupPages() {
-	a.stationsList = a.setupStationsList(newList(), a.stations)
-	a.tagsList = a.setupTagsList()
+	a.card = newNowPlaying(a)
+	a.hints = newHintBar(a)
 
-	a.status = tview.NewTextView().
-		SetTextColor(tcell.ColorLightGray).
-		SetDynamicColors(true).
-		SetText("Ready [gray]| [green]Press ? for help")
+	a.tagsList = newList()
+	a.tagsList.SetTitle(" Tags ")
+	a.tagsPane = newListPane(a.tagsList)
+	a.tagsList.SetChangedFunc(func(index int, _, _ string, _ rune) {
+		if a.wide && !a.syncingTags && index < len(a.tagRows) && a.tagRows[index] != "" {
+			a.loadTag(a.tagRows[index])
+		}
+	})
+	a.setupTagsList()
 
-	a.volume = tview.NewTextView().
-		SetDynamicColors(true).
-		SetTextColor(tcell.ColorLightGray).
-		SetTextAlign(tview.AlignRight)
+	a.stationsList = newList()
+	a.stationsPane = newListPane(a.stationsList)
+	a.stationsPane.overlay = a.drawStationMarks
+	a.setupStationsList(a.stationsList, a.stations)
 
-	statusFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(a.status, 0, 100, true).
-		AddItem(a.volume, 0, 25, false)
+	a.helpView = tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWordWrap(true)
+	a.helpView.SetText(helpText())
+	a.helpView.SetBorder(true).SetBorderPadding(0, 0, 1, 1).
+		SetTitle(" Help ").SetTitleAlign(tview.AlignLeft).SetTitleColor(colorAccent)
 
-	a.mainFlex = tview.NewFlex().
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(a.stationsList, 0, 100, true).
-			AddItem(statusFlex, 0, 1, true), 0, 1, true)
-
-	a.tagsFlex = tview.NewFlex().
-		AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-			AddItem(a.tagsList, 0, 100, true).
-			AddItem(statusFlex, 0, 1, true), 0, 1, true)
-
-	help := tview.NewTextView().
-		SetDynamicColors(true).
-		SetText(fmt.Sprintf("[green]%s\n\n[default]%s", VersionString(), helpString))
-	help.SetBackgroundColor(tcell.ColorDefault)
+	a.tagsFlex, a.mainFlex, a.helpFlex = tview.NewFlex(), tview.NewFlex(), tview.NewFlex()
+	a.buildLayout(false)
 
 	a.pages = tview.NewPages().
 		AddPage(a.pageNames[Tags], a.tagsFlex, true, true).
 		AddPage(a.pageNames[Main], a.mainFlex, true, false).
-		AddPage(a.pageNames[Help], help, true, false)
+		AddPage(a.pageNames[Help], a.helpFlex, true, false)
 	a.pageHistory = append(a.pageHistory, Tags)
 }
 
@@ -191,6 +216,12 @@ func (a *Application) show(page Page) {
 	}
 
 	a.pages.SwitchToPage(a.pageNames[page])
+
+	if a.wide && page == Tags && a.tag == "" {
+		a.previewTagAtCursor()
+	} else if a.wide && (page == Tags || page == Main) {
+		a.syncTagCursor()
+	}
 }
 
 func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey {
@@ -225,7 +256,9 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			}
 
 			if currentPage == a.pageNames[Main] {
-				a.tag = ""
+				if !a.wide {
+					a.tag = ""
+				}
 				a.show(Tags)
 				return nil
 			}
@@ -234,6 +267,16 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 				a.show(Tags)
 			}
 			return nil
+		case tcell.KeyTab, tcell.KeyBacktab:
+			if a.wide && currentPage == a.pageNames[Tags] {
+				a.show(Main)
+				return nil
+			}
+			if a.wide && currentPage == a.pageNames[Main] {
+				a.show(Tags)
+				return nil
+			}
+			return event
 		case tcell.KeyCtrlF:
 			a.showSearchModal(false)
 			return nil
@@ -250,9 +293,11 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			a.toggleRemoteModal()
 			return nil
 		case tcell.KeyLeft:
+			a.card.flash(time.Now())
 			a.player.VolumeDn()
 			return nil
 		case tcell.KeyRight:
+			a.card.flash(time.Now())
 			a.player.VolumeUp()
 			return nil
 		case tcell.KeyRune:
@@ -266,9 +311,11 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			}
 			switch event.Rune() {
 			case '=', '+':
+				a.card.flash(time.Now())
 				a.player.VolumeUp()
 				return nil
 			case '-', '_':
+				a.card.flash(time.Now())
 				a.player.VolumeDn()
 				return nil
 			case '/', '#':
@@ -294,30 +341,38 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 	}
 }
 
+// The player sends on Info while holding its lock, so only the latest
+// snapshot is queued for the UI loop and the player never waits for it.
 func (a *Application) updateStatus() {
+	var mu sync.Mutex
+	var latest Info
+	pending := make(chan struct{}, 1)
+
+	go func() {
+		for range pending {
+			mu.Lock()
+			inf := latest
+			mu.Unlock()
+			a.app.QueueUpdateDraw(func() {
+				a.card.update(inf, time.Now())
+			})
+		}
+	}()
+
 	for inf := range a.player.Info {
-		stationName := stripPlayCount(inf.Station)
-		if inf.Song == "" && inf.Status == "" {
-			a.status.SetText(stationName)
-		} else if inf.Song == "" {
-			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", stationName, inf.Status))
-		} else {
-			a.status.SetText(fmt.Sprintf("%s [gray]| [green]%s", stationName, stripBraces(inf.Song)))
-		}
-
-		if inf.Bitrate > 0 {
-			a.volume.SetText(fmt.Sprintf("%d kb/s [gray]|[lightgray] %d%%", inf.Bitrate, inf.Volume))
-		} else {
-			a.volume.SetText(fmt.Sprintf("%d%%", inf.Volume))
-		}
-
 		if a.waitingForPlayback != nil && inf.Url == a.waitingForURL && (inf.Status == "Playing" || inf.Song != "") {
 			close(a.waitingForPlayback)
 			a.waitingForPlayback = nil
 			a.waitingForURL = ""
 		}
 
-		a.app.Draw()
+		mu.Lock()
+		latest = inf
+		mu.Unlock()
+		select {
+		case pending <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -325,76 +380,103 @@ func (a *Application) setupStationsList(list *tview.List, stations []Station) *t
 	list.Clear()
 	list.SetCurrentItem(0)
 
+	a.stationsBackLink = a.tag != "" && !a.wide
 	offset := a.calculateStationListOffset()
+	rows := make([]string, 0, len(stations)+2)
 
-	if a.tag != "" {
-		list = list.AddItem(fmt.Sprintf("[red:black:]%s", a.tag), "", rune('#'), func() {
+	if a.stationsBackLink {
+		list.AddItem(glyphs.back+" "+tview.Escape(a.tag), "", rune('#'), func() {
 			a.tag = ""
 			a.show(Tags)
 		})
+		rows = append(rows, "")
 	}
 
-	list.AddItem("Random", "", rune('*'), func() {
-		if len(stations) == 0 {
-			return
-		}
-		r := a.randomIndex(stations)
-		list.SetCurrentItem(r + offset)
-		go a.togglePlayManual(stations[r])
-	})
+	if len(stations) > 0 {
+		list.AddItem("  Random", "", rune('*'), func() {
+			r := a.randomIndex(stations)
+			list.SetCurrentItem(r + offset)
+			go a.togglePlayManual(stations[r])
+		})
+		rows = append(rows, "")
+	}
 
 	for i := range stations {
-		list = list.AddItem(stations[i].title, "", idxToRune(i), func() {
+		list.AddItem("  "+stations[i].title, "", idxToRune(i), func() {
 			go a.togglePlayManual(stations[i])
 		})
+		rows = append(rows, stations[i].url)
 
 		if a.player.info.Url == stations[i].url {
 			list.SetCurrentItem(i + offset)
 		}
 	}
 
+	a.emptyStationsText = ""
+	if len(stations) == 0 {
+		a.emptyStationsText = "No stations"
+		if a.tag == favoritesTag {
+			a.emptyStationsText = "No favourites yet " + glyphs.dot + " stations you play land here"
+		}
+	}
+
+	a.stationRows = rows
+	a.setStationsTitle(len(stations))
 	return list
 }
 
-func (a *Application) setupTagsList() *tview.List {
-	tagsList := newList()
+func (a *Application) setStationsTitle(count int) {
+	name, icon := a.tag, glyphs.notes
+	switch a.tag {
+	case "":
+		name = allStationsTag
+	case favoritesTag:
+		icon = glyphs.star
+	}
+	if a.tag != "" && a.tag == a.lastSearchTag && a.lastOnlineStations != nil {
+		name += " (online)"
+	}
+	unit := "stations"
+	if count == 1 {
+		unit = "station"
+	}
+	a.stationsList.SetTitle(fmt.Sprintf(" %s %s %s %d %s ", icon, tview.Escape(name), glyphs.dot, count, unit))
+}
 
-	tags := tags(a.stations)
+func (a *Application) setupTagsList() {
+	a.syncingTags = true
+	defer func() { a.syncingTags = false }()
 
-	if a.favorites.hasFavorites() {
-		tagsList = tagsList.AddItem(favoritesTag, "", rune('$'), func() {
-			a.openTag(favoritesTag)
+	list := a.tagsList
+	cursor := list.GetCurrentItem()
+	list.Clear()
+	rows := make([]string, 0)
+	add := func(label string, shortcut rune, tag string) {
+		list.AddItem(label, "", shortcut, func() {
+			a.openTag(tag)
 		})
+		rows = append(rows, tag)
 	}
 
-	for i := range tags {
-		tagsList = tagsList.AddItem(tags[i], "", idxToRune(i), func() {
-			a.openTag(tags[i])
-		})
+	add(favoritesTag, '$', favoritesTag)
+	add(allStationsTag, '~', allStationsTag)
+	for i, tag := range tags(a.stations) {
+		add(tview.Escape(tag), idxToRune(i), tag)
 	}
-
 	if a.lastSearchTag != "" {
-		label := a.lastSearchTag
+		label := tview.Escape(a.lastSearchTag)
 		if a.lastOnlineStations != nil {
 			label += " [gray](online)[-]"
 		}
-		tagsList = tagsList.AddItem(label, "", rune('^'), func() {
-			a.openTag(a.lastSearchTag)
-		})
+		add(label, '^', a.lastSearchTag)
 	}
 
-	if len(tags) == 0 && !a.favorites.hasFavorites() {
-		tagsList = tagsList.AddItem("No tags were found", "", rune('#'), func() {
-			a.show(Main)
-		})
-	}
-
-	return tagsList
+	a.tagRows = rows
+	list.SetCurrentItem(cursor)
 }
 
-// openTag shows the station list for a tags-page entry: Favorites, All
-// Stations, a station tag or the last search. It reports whether tag is known.
-func (a *Application) openTag(tag string) bool {
+// loadTag is openTag without switching pages.
+func (a *Application) loadTag(tag string) bool {
 	switch {
 	case tag == a.lastSearchTag && tag != "":
 		var matchedStations []Station
@@ -405,12 +487,17 @@ func (a *Application) openTag(tag string) bool {
 		}
 		a.tag = a.lastSearchTag
 		a.setupStationsList(a.stationsList, matchedStations)
-	case tag == favoritesTag && a.favorites.hasFavorites(),
-		tag == allStationsTag,
-		slices.Contains(tags(a.stations), tag):
+	case tag == favoritesTag, tag == allStationsTag, slices.Contains(tags(a.stations), tag):
 		a.tag = tag
 		a.filterStationsForSelectedTag()
 	default:
+		return false
+	}
+	return true
+}
+
+func (a *Application) openTag(tag string) bool {
+	if !a.loadTag(tag) {
 		return false
 	}
 	a.show(Main)
@@ -430,8 +517,11 @@ func (a *Application) togglePlay(station Station) {
 	if station.url != "" && station.url != a.player.info.Url {
 		a.favorites.track(station)
 		if a.tag == favoritesTag {
-			a.filterStationsForSelectedTag()
-			a.findAndSelectStation(station.url)
+			// togglePlay runs off the UI goroutine.
+			a.app.QueueUpdateDraw(func() {
+				a.filterStationsForSelectedTag()
+				a.findAndSelectStation(station.url)
+			})
 		}
 	}
 	a.player.Toggle(station)
@@ -501,13 +591,10 @@ func (a *Application) findAndSelectStation(stationURL string) {
 }
 
 func (a *Application) calculateStationListOffset() int {
-	offset := 1
-
-	if a.tag != "" {
-		offset++
+	if a.stationsBackLink {
+		return 2
 	}
-
-	return offset
+	return 1
 }
 
 func (a *Application) findStationIndex(stationURL string, stations []Station) int {
@@ -522,31 +609,20 @@ func (a *Application) findStationIndex(stationURL string, stations []Station) in
 }
 
 func (a *Application) refreshTagsPage() {
-	a.tagsList = a.setupTagsList()
-	a.tagsFlex.Clear()
-	statusFlex := tview.NewFlex().SetDirection(tview.FlexColumn).
-		AddItem(a.status, 0, 100, true).
-		AddItem(a.volume, 0, 25, false)
-	a.tagsFlex.AddItem(tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(a.tagsList, 0, 100, true).
-		AddItem(statusFlex, 0, 1, true), 0, 1, true)
+	a.setupTagsList()
+	if a.wide {
+		a.syncTagCursor()
+	}
 }
 
 func newList() *tview.List {
 	list := tview.NewList()
 	list.ShowSecondaryText(false)
 	list.SetBackgroundColor(tcell.ColorDefault)
-	list.SetSelectedStyle(tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(tcell.ColorGreen).Bold(true))
-	list.SetMainTextStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
-	list.SetShortcutStyle(tcell.StyleDefault.Foreground(tcell.ColorDefault).Background(tcell.ColorDefault))
+	list.SetSelectedStyle(styleSelected)
+	list.SetMainTextStyle(styleText)
+	list.SetShortcutStyle(styleDim)
 	return list
-}
-
-func devNullMouse() func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
-	return func(event *tcell.EventMouse, action tview.MouseAction) (*tcell.EventMouse, tview.MouseAction) {
-		// do nothing, please
-		return nil, action
-	}
 }
 
 func tags(stations []Station) []string {
@@ -564,7 +640,7 @@ func tags(stations []Station) []string {
 		tags = append(tags, tag)
 	}
 
-	sort.Sort(sort.StringSlice(tags))
+	sort.Strings(tags)
 	return tags
 }
 
