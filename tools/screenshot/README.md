@@ -5,12 +5,14 @@ PNG files, so UI changes can be reviewed without a desktop, a sound card or
 network access.
 
 - `bin/mpv` is a stand-in for mpv. It answers goradion's IPC commands,
-  pretends to buffer and play, sends track titles and a moving audio level.
-  Its environment knobs are listed at the top of the file.
+  pretends to buffer and play, and sends track titles and moving meter
+  readings. Its environment knobs are listed at the top of the file.
 - `shoot.py` drives the program with a scenario of key presses, mouse
   events and resizes, and saves screenshots. The scenario format is
   described at the top of the file.
-- `shots.sh` builds goradion and runs the three scenarios in this folder.
+- `shots.sh` builds goradion and runs the scenarios in this folder. The
+  fallback and watchdog scenarios run with the spectrum refused, and with
+  the spectrum taken but silent, to show the level meter taking over.
 
 ## Requirements
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -30,7 +31,7 @@ var errNotFound = errors.New("not found")
 // Remote is the HTTP server behind Ctrl+P. It lives until the TUI exits.
 type Remote struct {
 	app   *Application
-	token string
+	token string // empty: no access code is asked for
 	port  int
 	ip    string
 	srv   *http.Server
@@ -97,9 +98,14 @@ func (a *Application) startRemote() (*Remote, error) {
 		}
 	}
 
+	token := newToken(tokenLength)
+	if a.remoteKey != nil {
+		token = strings.TrimSpace(*a.remoteKey)
+	}
+
 	r := &Remote{
 		app:   a,
-		token: newToken(tokenLength),
+		token: token,
 		port:  ln.Addr().(*net.TCPAddr).Port,
 		ip:    lanIP(),
 	}
@@ -136,7 +142,10 @@ func (r *Remote) Address() string {
 }
 
 func (r *Remote) URL() string {
-	return r.Address() + "/?k=" + r.token
+	if r.token == "" {
+		return r.Address()
+	}
+	return r.Address() + "/?k=" + url.QueryEscape(r.token)
 }
 
 func (r *Remote) Key() string {
@@ -171,7 +180,7 @@ type actionRequest struct {
 }
 
 // auth accepts the key as the "k" query parameter (QR link) or the X-Key
-// header (page script).
+// header (page script). Case is ignored: phone keyboards capitalize.
 func (r *Remote) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
 		key := req.URL.Query().Get("k")
@@ -179,7 +188,7 @@ func (r *Remote) auth(next http.HandlerFunc) http.HandlerFunc {
 			key = req.Header.Get("X-Key")
 		}
 		key = strings.ToLower(strings.TrimSpace(key))
-		if subtle.ConstantTimeCompare([]byte(key), []byte(r.token)) != 1 {
+		if r.token != "" && subtle.ConstantTimeCompare([]byte(key), []byte(strings.ToLower(r.token))) != 1 {
 			http.Error(w, "Forbidden: wrong access code. The code is shown by goradion when you press Ctrl+P.", http.StatusForbidden)
 			return
 		}

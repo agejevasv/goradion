@@ -27,4 +27,7 @@ run() {
 run 80 24 narrow.json
 run 120 40 wide.json
 run 80 24 ascii.json -ascii
+run 80 24 spectrum.json
+FAKEMPV_SPECTRUM=0 run 80 24 fallback.json
+FAKEMPV_SPECTRUM=late run 80 24 watchdog.json
 echo "Screenshots are in $out"

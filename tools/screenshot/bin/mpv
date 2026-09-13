@@ -2,14 +2,18 @@
 """A stand-in for mpv that speaks just enough JSON IPC for goradion's UI.
 
 No audio is played. After "loadfile" it reports a bitrate, playback start and
-track titles, and it answers the audio-level filter goradion installs with a
-smooth, music-like level stream so the VU meter moves.
+track titles, and it answers the meter filter goradion installs with smooth,
+music-like readings: twelve bands for the spectrum graph, one level for the
+level filters.
 
 Environment knobs:
   FAKEMPV_BUFFER=0.6      seconds of "buffering" before playback starts
   FAKEMPV_META=0.8        seconds after playback until the first title
   FAKEMPV_SONG=0          seconds between title changes (0: never)
-  FAKEMPV_VU=1            0 makes the level filter fail, like an old FFmpeg
+  FAKEMPV_VU=1            0 makes every meter filter fail, like an ancient FFmpeg
+  FAKEMPV_SPECTRUM=1      0 refuses the spectrum graph but takes the level filter;
+                          late takes the graph but never sends a reading, like
+                          FFmpeg 4.2 playing a 22 kHz stream
   FAKEMPV_TITLE=...       force this title for every station
 """
 import json, math, os, random, socket, sys, threading, time, zlib
@@ -37,7 +41,7 @@ server.listen(16)
 
 lock = threading.Lock()
 observers = {}          # property name -> list of connections
-state = {"url": None, "generation": 0, "vu": False}
+state = {"url": None, "generation": 0, "idle": True, "vu": False, "spectrum": False, "silent": False}
 env = lambda k, d: float(os.environ.get(k, d))
 
 
@@ -62,13 +66,20 @@ def emit_event(obj):
         send(conn, obj)
 
 
+def set_idle(idle):
+    state["idle"] = idle
+    emit("core-idle", idle)
+
+
 def play(url, generation):
     h = zlib.crc32(url.encode())
     time.sleep(env("FAKEMPV_BUFFER", 0.6))
     if state["generation"] != generation:
         return
     emit("audio-bitrate", BITRATES[h % len(BITRATES)])
+    emit("audio-params/samplerate", 44100)
     emit_event({"event": "playback-restart"})
+    set_idle(False)
     time.sleep(env("FAKEMPV_META", 0.8))
     song, index = env("FAKEMPV_SONG", 0), h % len(TITLES)
     while state["generation"] == generation:
@@ -80,19 +91,37 @@ def play(url, generation):
         index += 1
 
 
+def spectrum(t, rms, beat):
+    """Channels 1 and 2 are the stereo and 3 to 14 the bands: a hump that
+    wanders between bass and treble, the beat in the lowest bands and a gentle
+    treble roll-off, spread over most of the meter's range."""
+    data = {"lavfi.astats.1.RMS_level": f"{rms:.6f}", "lavfi.astats.2.RMS_level": f"{rms - 1:.6f}"}
+    centre = 5.5 + 5 * math.sin(t * 2 * math.pi * 0.07)
+    for band in range(12):
+        hump = 20 * math.exp(-((band - centre) / 2) ** 2)
+        kick = 10 * beat * max(0.0, 1 - band / 3)
+        db = rms - 8 + hump + kick - 2.2 * band + random.uniform(-4, 4)
+        data[f"lavfi.astats.{band + 3}.RMS_level"] = f"{db:.6f}"
+    return data
+
+
 def levels():
     start = time.time()
     while True:
         time.sleep(0.1)
-        if not (state["vu"] and state["url"]):
+        if not (state["vu"] and state["url"]) or state["silent"]:
             continue
         t = time.time() - start
         beat = 1.0 if (t % 0.5) < 0.12 else 0.0
         rms = -16 + 6 * math.sin(t * 2 * math.pi * 0.23) + 5 * beat + random.uniform(-2.5, 2.5)
+        if state["spectrum"]:
+            data = spectrum(t, rms, beat)
+        else:
+            data = {"lavfi.astats.Overall.RMS_level": f"{rms:.6f}"}
         with lock:
             names = [n for n in observers if n.startswith("af-metadata/")]
         for name in names:
-            emit(name, {"lavfi.astats.Overall.RMS_level": f"{rms:.6f}"})
+            emit(name, data)
 
 
 def handle(conn):
@@ -119,19 +148,29 @@ def handle(conn):
                     observers.setdefault(cmd[2], []).append(conn)
                 if cmd[2] == "pause":
                     send(conn, {"event": "property-change", "id": cmd[1], "name": "pause", "data": False})
+                elif cmd[2] == "core-idle":
+                    send(conn, {"event": "property-change", "id": cmd[1], "name": "core-idle", "data": state["idle"]})
             elif name == "loadfile":
                 state["generation"] += 1
                 state["url"] = cmd[1]
+                set_idle(True)
                 threading.Thread(target=play, args=(cmd[1], state["generation"]), daemon=True).start()
             elif name == "stop":
                 state["generation"] += 1
                 state["url"] = None
+                set_idle(True)
                 emit_event({"event": "end-file", "reason": "stop"})
+            elif name == "af" and cmd[1:2] == ["remove"]:
+                state.update(vu=False, spectrum=False, silent=False)
             elif name == "af":
-                if os.environ.get("FAKEMPV_VU", "1") == "0":
+                graph = len(cmd) > 2 and "amerge" in cmd[2]
+                knob = os.environ.get("FAKEMPV_SPECTRUM", "1")
+                if os.environ.get("FAKEMPV_VU", "1") == "0" or (graph and knob == "0"):
                     reply = {"error": "error running command", "request_id": rid}
                 else:
-                    state["vu"] = True
+                    state.update(vu=True, spectrum=graph, silent=graph and knob == "late")
+            elif name == "get_property" and cmd[1:2] == ["core-idle"]:
+                reply["data"] = state["idle"]
             elif name == "quit":
                 os._exit(0)
             send(conn, reply)

@@ -27,6 +27,15 @@ func WithASCII(on bool) Option {
 	return func(a *Application) { a.ascii = a.ascii || on }
 }
 
+// WithRemote starts the remote control server together with the TUI. A nil
+// key means a random access code, an empty one means no code at all.
+func WithRemote(key *string) Option {
+	return func(a *Application) {
+		a.remoteAutostart = true
+		a.remoteKey = key
+	}
+}
+
 func helpText() string {
 	arrows := glyphs.left + " " + glyphs.right + " - +"
 	sections := []struct {
@@ -57,9 +66,10 @@ func helpText() string {
 		}},
 		{"Command line", [][2]string{
 			{"-ascii", "plain ASCII symbols for terminals without Unicode fonts"},
-			{"-no-vu", "hide the audio level meter"},
+			{"-no-vu", "hide the audio meter"},
 			{"-s file|url", "stations CSV to use"},
 			{"-p port", "preferred port for the phone remote"},
+			{"-r key", "start the phone remote at launch; key is optional, \"\" for none"},
 		}},
 	}
 	var sb strings.Builder
@@ -118,6 +128,8 @@ type Application struct {
 	waitingForURL           string
 	remote                  *Remote
 	remotePort              int
+	remoteAutostart         bool
+	remoteKey               *string // nil: a random code per run
 	remoteModal             *tview.Flex
 	remoteQR                *tview.TextView
 	remoteText              *tview.TextView
@@ -168,6 +180,12 @@ func NewApp(player *Player, stations []Station, remotePort int, options ...Optio
 
 func (a *Application) Run() error {
 	defer a.stopRemote()
+	if a.remoteAutostart {
+		if _, err := a.startRemote(); err != nil {
+			// The modal retries and shows the error.
+			a.app.QueueUpdateDraw(a.showRemoteModal)
+		}
+	}
 	stop := make(chan struct{})
 	defer close(stop)
 	go a.animate(stop)

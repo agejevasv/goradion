@@ -15,8 +15,7 @@ func (a *Application) animate(stop <-chan struct{}) {
 		}
 		a.app.QueueUpdate(func() {
 			now := time.Now()
-			level, at, ok := a.player.Level()
-			a.card.advance(now, level, at, ok)
+			a.card.advance(now, a.player)
 			if a.card.animating(now) && a.card.changed(now) {
 				a.app.ForceDraw()
 			}

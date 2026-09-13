@@ -49,8 +49,12 @@ func (a *Application) showRemoteModal() {
 		sb.WriteString("[green::b]Control goradion from your phone[-::-]\n\n")
 		sb.WriteString("Scan the QR code with the phone camera, or open\n\n")
 		sb.WriteString(fmt.Sprintf("  [yellow]%s[-]\n\n", r.Address()))
-		sb.WriteString("and enter the code\n\n")
-		sb.WriteString(fmt.Sprintf("  [yellow::b]%s[-::-]\n\n", r.Key()))
+		if r.Key() == "" {
+			sb.WriteString("[red]No access code is set:[-] anyone on the network can control goradion.\n\n")
+		} else {
+			sb.WriteString("and enter the code\n\n")
+			sb.WriteString(fmt.Sprintf("  [yellow::b]%s[-::-]\n\n", tview.Escape(r.Key())))
+		}
 		sb.WriteString("The phone must be on the same network.\n\n")
 		sb.WriteString("[gray]Esc closes this window.[-]")
 		text = sb.String()

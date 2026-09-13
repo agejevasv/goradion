@@ -77,3 +77,11 @@ different preferred port with `-p`:
 ```bash
 goradion -p 8080
 ```
+
+Start the server together with goradion with `-r`. It takes an optional access code of
+any length; `""` turns the code off, so anyone on the network can control the player:
+```bash
+goradion -r                  # random code, as with Ctrl+P
+goradion -r "my secret code" # a fixed code, handy for a bookmarked phone
+goradion -r ""               # no code
+```

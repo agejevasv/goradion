@@ -39,6 +39,8 @@ type glyphSet struct {
 	gaugeFull, gaugeHalf, gaugeEmpty string
 
 	vuLit, vuUnlit []string
+
+	bands []string // spectrum bars, from quiet to full
 }
 
 var unicodeGlyphs = glyphSet{
@@ -49,6 +51,7 @@ var unicodeGlyphs = glyphSet{
 	gaugeFull: "━", gaugeHalf: "╸", gaugeEmpty: "─",
 	vuLit:   strings.Split("▁▂▂▃▃▄▅▅▆▆▇█", ""),
 	vuUnlit: strings.Split("▁▂▂▃▃▄▅▅▆▆▇█", ""),
+	bands:   strings.Split("▁▂▃▄▅▆▇█", ""),
 }
 
 var asciiGlyphs = glyphSet{
@@ -59,6 +62,7 @@ var asciiGlyphs = glyphSet{
 	gaugeFull: "=", gaugeHalf: "", gaugeEmpty: "-",
 	vuLit:   strings.Split("||||||||||||", ""),
 	vuUnlit: strings.Split("............", ""),
+	bands:   strings.Split(".:|#", ""),
 }
 
 var glyphs = unicodeGlyphs

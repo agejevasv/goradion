@@ -35,8 +35,17 @@ type Player struct {
 
 	// Atomic, because the UI must never take the player lock.
 	vu        atomic.Int32 // a vuState
+	meter     atomic.Int32 // index into meterCandidates, kept once mpv takes one
 	levelBits atomic.Uint64
 	levelAt   atomic.Int64
+	bands     atomic.Pointer[[bandCount]float64] // replaced, never modified in place
+	bandsAt   atomic.Int64
+
+	// Only touched by the goroutine that reads mpv events.
+	sampleRate int
+	coreIdle   bool
+	watchSince time.Time // when the spectrum watchdog was armed, zero when it is not
+	watchTimer *time.Timer
 }
 
 type Info struct {
@@ -69,20 +78,30 @@ const (
 	vuOff
 )
 
-// The level filter is added once audio plays: mpv then refuses a bad filter
+// The meter filter is added once audio plays: mpv then refuses a bad filter
 // and plays on, while a bad filter given at start-up or while idle makes every
-// station fail. The first variant needs FFmpeg 5, the second works with older.
+// station fail. The handshake walks the candidates until mpv takes one.
 const vuFilterLabel = "goradionvu"
 
-var vuFilters = []string{
-	"@" + vuFilterLabel + ":lavfi=[astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=RMS_level]",
-	"@" + vuFilterLabel + ":lavfi=[astats=metadata=1:reset=1]",
+type meterCandidate struct {
+	name   string
+	filter string
+	bands  bool // measures the bands as well as the level
+}
+
+var meterCandidates = []meterCandidate{
+	{"spectrum", "@" + vuFilterLabel + ":lavfi=[" + spectrumGraph() + "]", true},
+	{"level", "@" + vuFilterLabel + ":lavfi=[astats=metadata=1:reset=1:measure_perchannel=none:measure_overall=RMS_level]", false},
+	// Reports every statistic, for builds that refuse the measure options.
+	{"plain level", "@" + vuFilterLabel + ":lavfi=[astats=metadata=1:reset=1]", false},
 }
 
 const (
-	vuRequestID     = 7300 // + index into vuFilters
-	vuRemoveRequest = 7399
-	vuFloorDB       = -32.0
+	vuRequestID          = 7300 // + index into meterCandidates
+	spectrumCheckRequest = 7398
+	vuRemoveRequest      = 7399
+	vuFloorDB            = -32.0
+	spectrumWatchdog     = 3 * time.Second
 )
 
 type Retry struct {
@@ -337,7 +356,11 @@ func (p *Player) readMPVEvents() {
 	}
 
 	if vuState(p.vu.Load()) != vuOff {
-		cmds = append(cmds, fmt.Sprintf(`{"command": ["observe_property", 1, "af-metadata/%s"]}%s`, vuFilterLabel, "\n"))
+		cmds = append(cmds,
+			fmt.Sprintf(`{"command": ["observe_property", 1, "af-metadata/%s"]}%s`, vuFilterLabel, "\n"),
+			fmt.Sprintf(`{"command": ["observe_property", 1, "audio-params/samplerate"]}%s`, "\n"),
+			fmt.Sprintf(`{"command": ["observe_property", 1, "core-idle"]}%s`, "\n"),
+		)
 	}
 
 	for _, cmd := range cmds {
@@ -537,11 +560,36 @@ func (p *Player) Level() (level float64, at time.Time, ok bool) {
 	return math.Float64frombits(p.levelBits.Load()), at, true
 }
 
+// Spectrum holds band levels between 0 and 1, bass first; ok is false when the
+// meter is off or unsupported, or when the filter in use only measures the
+// level.
+func (p *Player) Spectrum() (bands [bandCount]float64, at time.Time, ok bool) {
+	switch vuState(p.vu.Load()) {
+	case vuOff, vuUnavailable:
+		return bands, time.Time{}, false
+	}
+	if !meterCandidates[p.meter.Load()].bands {
+		return bands, time.Time{}, false
+	}
+	if b := p.bands.Load(); b != nil {
+		bands = *b
+	}
+	if nanos := p.bandsAt.Load(); nanos != 0 {
+		at = time.Unix(0, nanos)
+	}
+	return bands, at, true
+}
+
 // installVU writes to the event connection so that mpv's reply reaches handleVU.
 func (p *Player) installVU(c io.Writer) {
 	if p.vu.CompareAndSwap(int32(vuPending), int32(vuTrying)) {
-		writeCommand(c, vuRequestID, "af", "add", vuFilters[0])
+		p.addMeter(c, int(p.meter.Load()))
 	}
+}
+
+func (p *Player) addMeter(c io.Writer, candidate int) {
+	p.meter.Store(int32(candidate))
+	writeCommand(c, vuRequestID+candidate, "af", "add", meterCandidates[candidate].filter)
 }
 
 // suspectVU removes the filter after a stream error in case it was the cause;
@@ -550,51 +598,166 @@ func (p *Player) suspectVU(c io.Writer) {
 	if p.vu.CompareAndSwap(int32(vuOn), int32(vuPending)) {
 		writeCommand(c, vuRemoveRequest, "af", "remove", "@"+vuFilterLabel)
 		p.levelAt.Store(0)
+		p.bandsAt.Store(0)
+		p.disarmWatch()
 	}
 }
 
 func (p *Player) handleVU(c io.Writer, rsp map[string]any) bool {
-	if eventIs(rsp, "property-change") && nameIs(rsp, "af-metadata/"+vuFilterLabel) {
-		if meta, ok := rsp["data"].(map[string]any); ok {
-			if level, ok := levelFromMetadata(meta); ok {
-				p.levelBits.Store(math.Float64bits(level))
-				p.levelAt.Store(time.Now().UnixNano())
+	if eventIs(rsp, "property-change") {
+		switch {
+		case nameIs(rsp, "af-metadata/"+vuFilterLabel):
+			if meta, ok := rsp["data"].(map[string]any); ok {
+				p.storeReading(meta)
 			}
+			return true
+		case nameIs(rsp, "audio-params/samplerate"):
+			rate, _ := rsp["data"].(float64)
+			p.sampleRate = int(rate)
+			return true
+		case nameIs(rsp, "core-idle"):
+			p.coreIdle, _ = rsp["data"].(bool)
+			if p.coreIdle {
+				p.disarmWatch()
+			} else {
+				p.armWatch(c)
+			}
+			return true
 		}
-		return true
 	}
 
 	id, ok := rsp["request_id"].(float64)
 	if !ok || int(id) < vuRequestID || int(id) > vuRemoveRequest {
 		return false
 	}
-	variant := int(id) - vuRequestID
+	candidate := int(id) - vuRequestID
 	switch {
 	case int(id) == vuRemoveRequest:
-		log.Printf("level meter: filter removed (%v)", rsp["error"])
+		log.Printf("audio meter: filter removed (%v)", rsp["error"])
+	case int(id) == spectrumCheckRequest:
+		p.checkWatch(c)
+	case candidate >= len(meterCandidates):
 	case rsp["error"] == "success":
 		p.vu.CompareAndSwap(int32(vuTrying), int32(vuOn))
-		log.Printf("level meter: filter variant %d installed", variant)
-	case variant+1 < len(vuFilters):
-		log.Printf("level meter: filter variant %d refused (%v)", variant, rsp["error"])
-		writeCommand(c, vuRequestID+variant+1, "af", "add", vuFilters[variant+1])
+		log.Printf("audio meter: %s filter installed", meterCandidates[candidate].name)
+		p.armWatch(c)
+	case candidate+1 < len(meterCandidates):
+		log.Printf("audio meter: %s filter refused (%v)", meterCandidates[candidate].name, rsp["error"])
+		p.addMeter(c, candidate+1)
 	default:
-		log.Printf("level meter: unavailable (%v)", rsp["error"])
+		log.Printf("audio meter: unavailable (%v)", rsp["error"])
 		p.vu.CompareAndSwap(int32(vuTrying), int32(vuUnavailable))
 	}
 	return true
 }
 
-func levelFromMetadata(meta map[string]any) (float64, bool) {
-	s, ok := meta["lavfi.astats.Overall.RMS_level"].(string)
-	if !ok {
-		return 0, false
+func (p *Player) storeReading(meta map[string]any) {
+	r := readMeter(meta)
+	now := time.Now().UnixNano()
+	if r.hasLevel {
+		p.levelBits.Store(math.Float64bits(dbToLevel(r.level)))
+		p.levelAt.Store(now)
 	}
-	db, err := strconv.ParseFloat(strings.TrimSpace(s), 64) // Silence is "-inf".
-	if err != nil {
-		return 0, false
+	if r.hasBands {
+		bands := new([bandCount]float64)
+		for i, db := range r.bands {
+			bands[i] = bandLevel(i, db, p.sampleRate)
+		}
+		p.bands.Store(bands)
+		p.bandsAt.Store(now)
 	}
-	return dbToLevel(db), true
+}
+
+// armWatch starts the spectrum watchdog while audio plays. The timer must not
+// touch the event state, so it asks mpv a harmless question and checkWatch
+// runs when the answer arrives.
+func (p *Player) armWatch(c io.Writer) {
+	if p.coreIdle || vuState(p.vu.Load()) != vuOn || !meterCandidates[p.meter.Load()].bands {
+		return
+	}
+	p.watchSince = time.Now()
+	if p.watchTimer == nil {
+		p.watchTimer = time.AfterFunc(spectrumWatchdog, func() {
+			writeCommand(c, spectrumCheckRequest, "get_property", "core-idle")
+		})
+	} else {
+		p.watchTimer.Reset(spectrumWatchdog)
+	}
+}
+
+func (p *Player) disarmWatch() {
+	p.watchSince = time.Time{}
+	if p.watchTimer != nil {
+		p.watchTimer.Stop()
+	}
+}
+
+// checkWatch replaces the spectrum with the next candidate when no band
+// reading arrived while the watchdog was armed: FFmpeg 4.3 and older fail the
+// graph only once audio flows, and mpv then plays on without it.
+func (p *Player) checkWatch(c io.Writer) {
+	since := p.watchSince
+	if since.IsZero() || time.Since(since) < spectrumWatchdog {
+		return
+	}
+	p.watchSince = time.Time{}
+	candidate := int(p.meter.Load())
+	if p.bandsAt.Load() >= since.UnixNano() || !meterCandidates[candidate].bands ||
+		candidate+1 >= len(meterCandidates) || !p.vu.CompareAndSwap(int32(vuOn), int32(vuTrying)) {
+		return
+	}
+	log.Printf("audio meter: no band readings for %v, replacing the %s filter", spectrumWatchdog, meterCandidates[candidate].name)
+	writeCommand(c, vuRemoveRequest, "af", "remove", "@"+vuFilterLabel)
+	p.addMeter(c, candidate+1)
+}
+
+type meterReading struct {
+	level    float64            // dBFS
+	bands    [bandCount]float64 // dBFS, bass first
+	hasLevel bool
+	hasBands bool
+}
+
+// readMeter parses one af-metadata update. The level filters report
+// lavfi.astats.Overall.RMS_level. The spectrum graph reports
+// lavfi.astats.N.RMS_level for channel N-1 instead: channels 0 and 1 are the
+// stereo, whose louder side gives the level, and the rest are the bands.
+// Silence is "-inf".
+func readMeter(meta map[string]any) meterReading {
+	var r meterReading
+	var channels [2 + bandCount]float64
+	var seen [2 + bandCount]bool
+	for key, value := range meta {
+		name, ok := strings.CutPrefix(key, "lavfi.astats.")
+		if !ok {
+			continue
+		}
+		if name, ok = strings.CutSuffix(name, ".RMS_level"); !ok {
+			continue
+		}
+		s, ok := value.(string)
+		if !ok {
+			continue
+		}
+		db, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if err != nil {
+			continue
+		}
+		if name == "Overall" {
+			r.level, r.hasLevel = db, true
+		} else if n, err := strconv.Atoi(name); err == nil && n >= 1 && n <= len(channels) {
+			channels[n-1], seen[n-1] = db, true
+		}
+	}
+	if !r.hasLevel && seen[0] {
+		r.level, r.hasLevel = channels[0], true
+		if seen[1] {
+			r.level = max(r.level, channels[1])
+		}
+	}
+	r.hasBands = !slices.Contains(seen[2:], false)
+	copy(r.bands[:], channels[2:])
+	return r
 }
 
 func dbToLevel(db float64) float64 {

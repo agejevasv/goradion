@@ -43,8 +43,10 @@ type nowPlaying struct {
 
 	level, peak float64
 	peakAt      time.Time
+	bands       [bandCount]float64
 	levelTick   time.Time
-	meterOK     bool
+	meterOK     bool // the player measures the level
+	spectrumOK  bool // and the bands too
 
 	// A copy of the shuffle state, see publishShuffle.
 	shuffleActive   bool
@@ -64,7 +66,7 @@ type cardFrame struct {
 }
 
 func newNowPlaying(a *Application) *nowPlaying {
-	n := &nowPlaying{Box: tview.NewBox(), app: a, meterOK: true}
+	n := &nowPlaying{Box: tview.NewBox(), app: a, meterOK: true, spectrumOK: true}
 	n.SetBorder(true)
 	return n
 }
@@ -114,34 +116,57 @@ func (n *nowPlaying) playingURL() (string, playState) {
 	return n.info.Url, st
 }
 
-func (n *nowPlaying) advance(now time.Time, raw float64, rawAt time.Time, ok bool) {
+// meterSource is the player, as far as the meter is concerned.
+type meterSource interface {
+	Level() (level float64, at time.Time, ok bool)
+	Spectrum() (bands [bandCount]float64, at time.Time, ok bool)
+}
+
+func (n *nowPlaying) advance(now time.Time, src meterSource) {
 	dt := now.Sub(n.levelTick).Seconds()
 	if n.levelTick.IsZero() || dt > 0.5 || dt < 0 {
 		dt = 0.05
 	}
 	n.levelTick = now
-	n.meterOK = ok
+	playing := n.state() == statePlaying
 
+	raw, rawAt, ok := src.Level()
+	n.meterOK = ok
 	target := 0.0
-	if ok && n.state() == statePlaying && now.Sub(rawAt) < vuStale {
+	if ok && playing && now.Sub(rawAt) < vuStale {
 		target = raw
 	}
-	if target >= n.level {
-		n.level = target
-	} else {
-		n.level = max(target, n.level-vuFallPerSec*dt)
-	}
+	n.level = follow(n.level, target, dt)
 	if n.level >= n.peak {
 		n.peak, n.peakAt = n.level, now
 	} else if now.Sub(n.peakAt) > vuPeakHold {
 		n.peak = max(n.level, n.peak-vuFallPerSec*dt)
 	}
+
+	bands, bandsAt, ok := src.Spectrum()
+	n.spectrumOK = ok
+	fresh := ok && playing && now.Sub(bandsAt) < vuStale
+	for i := range n.bands {
+		if !fresh {
+			bands[i] = 0
+		}
+		n.bands[i] = follow(n.bands[i], bands[i], dt)
+	}
+}
+
+// follow jumps up to a louder target and falls slowly towards a quieter one.
+func follow(current, target, dt float64) float64 {
+	if target >= current {
+		return target
+	}
+	return max(target, current-vuFallPerSec*dt)
 }
 
 func (n *nowPlaying) animating(now time.Time) bool {
 	st := n.state()
 	return st == stateBuffering || st == statePlaying || st == stateFailed ||
-		now.Before(n.flashUntil) || n.shuffleActive || n.level > 0 || n.peak > 0
+		now.Before(n.flashUntil) || n.shuffleActive || n.level > 0 || n.peak > 0 ||
+		n.bands != [bandCount]float64{}
 }
 
 func (n *nowPlaying) previousTrack() (Track, bool) {
@@ -263,7 +288,26 @@ func (n *nowPlaying) gauges(now time.Time, width int, f *cardFrame) []seg {
 	return fitSegs(row, width)
 }
 
+// meter draws the spectrum, one cell per band with the bass on the left, or
+// the level when the player measures nothing else.
 func (n *nowPlaying) meter() []seg {
+	if !n.spectrumOK {
+		return n.levelMeter()
+	}
+	const steps = 8
+	out := make([]seg, bandCount)
+	for i, level := range n.bands {
+		step := min(int(math.Round(level*steps)), steps)
+		if step <= 0 {
+			out[i] = seg{glyphs.bands[0], styleDim}
+			continue
+		}
+		out[i] = seg{glyphs.bands[(step-1)*len(glyphs.bands)/steps], styleAccent}
+	}
+	return out
+}
+
+func (n *nowPlaying) levelMeter() []seg {
 	lit := int(math.Round(n.level * vuCells))
 	peak := int(math.Round(n.peak*vuCells)) - 1
 	out := make([]seg, vuCells)
