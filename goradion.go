@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/agejevasv/goradion/internal/logging"
+	"github.com/agejevasv/goradion/internal/mpv"
 	"github.com/agejevasv/goradion/internal/radio"
 )
 
@@ -30,9 +32,16 @@ func main() {
 		os.Exit(0)
 	}
 
-	radio.InitLog(*dbg)
+	if err := logging.Init(*dbg); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
-	stations := radio.Stations(*cfg)
+	stations, err := radio.LoadStations(*cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	if len(stations) == 0 {
 		fmt.Println("Stations list is empty, exiting.")
 		os.Exit(0)
@@ -43,11 +52,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	player := radio.NewPlayer()
+	player := mpv.New()
 	if *noVU {
 		player.DisableVU()
 	}
-	go player.Start()
+	if err := player.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	defer player.Quit()
 
 	options := []radio.Option{radio.WithASCII(*ascii)}
@@ -56,7 +68,9 @@ func main() {
 	}
 
 	if err := radio.NewApp(player, stations, *port, options...).Run(); err != nil {
-		panic(err)
+		player.Quit()
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 

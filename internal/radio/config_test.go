@@ -8,7 +8,6 @@ import (
 
 func TestConfigDefaultsAndSave(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	InitLog(false)
 
 	c := loadConfig()
 	if c.Theme != defaultTheme {

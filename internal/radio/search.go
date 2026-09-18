@@ -86,7 +86,7 @@ func (a *Application) setupSearchModal() {
 			AddItem(nil, 0, 5, false), 0, 90, true).
 		AddItem(nil, 0, 5, false)
 
-	a.pages.AddPage(a.pageNames[Search], a.searchModal, true, false)
+	a.addPage(pageSearch, a.searchModal, false)
 }
 
 // showSearchModal opens the search modal in the given mode. If the modal is
@@ -104,17 +104,17 @@ func (a *Application) showSearchModal(online bool) {
 	a.applySearchMode()
 	a.searchResults.Clear()
 	a.showSearchPlaceholder()
-	a.pages.ShowPage(a.pageNames[Search])
+	a.showModal(pageSearch)
 	a.app.SetFocus(a.searchInput)
 }
 
 func (a *Application) hideSearchModal() {
 	a.searchGeneration++
-	a.pages.HidePage(a.pageNames[Search])
+	a.hideModal(pageSearch)
 }
 
 func (a *Application) isSearchModalOpen() bool {
-	return a.pages.GetPageNames(true)[0] == a.pageNames[Search]
+	return a.isFront(pageSearch)
 }
 
 func (a *Application) setSearchMode(online bool) {
@@ -147,7 +147,6 @@ func (a *Application) applySearchColors() {
 	a.applySearchMode()
 }
 
-// applySearchMode updates the modal title and label colour to reflect the mode.
 func (a *Application) applySearchMode() {
 	// Box titles are printed over the default style, so the tags spell out the
 	// background instead of resetting it with "-".
@@ -169,27 +168,43 @@ func (a *Application) showSearchPlaceholder() {
 	}
 }
 
-func (a *Application) filterStations(query string) []Station {
-	if query == "" {
+// searchStations returns the stations whose title or tags contain every word
+// of the query, ignoring case.
+func searchStations(stations []Station, query string) []Station {
+	words := strings.Fields(strings.ToLower(query))
+	if len(words) == 0 {
 		return nil
 	}
-
-	queryWords := strings.Fields(strings.ToLower(query))
-	var matchedStations []Station
-
-	for _, station := range a.stations {
-		if fuzzyMatch(station, queryWords) {
-			matchedStations = append(matchedStations, station)
+	var match []Station
+	for _, s := range stations {
+		if matchesAll(s, words) {
+			match = append(match, s)
 		}
 	}
-
-	return matchedStations
+	return match
 }
 
-// updateSearchResults performs a live local search as the user types.
+func matchesAll(s Station, words []string) bool {
+	title := strings.ToLower(s.title)
+	for _, word := range words {
+		found := strings.Contains(title, word)
+		for _, tag := range s.tags {
+			if found {
+				break
+			}
+			found = strings.Contains(strings.ToLower(tag), word)
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// updateSearchResults runs the local search as the user types.
 func (a *Application) updateSearchResults(query string) {
-	results := make([]searchResult, 0)
-	for _, station := range a.filterStations(query) {
+	var results []searchResult
+	for _, station := range searchStations(a.stations, query) {
 		results = append(results, searchResult{station: station})
 	}
 	a.renderSearchResults(query, results, false)
@@ -205,7 +220,7 @@ func (a *Application) startOnlineSearch(query string) {
 	a.searchResults.AddItem(fgTag(colorWarn)+"Searching...[-]", "", 0, nil)
 
 	go func() {
-		found, err := SearchRadioBrowser(query)
+		found, err := searchRadioBrowser(query)
 
 		a.app.QueueUpdateDraw(func() {
 			if generation != a.searchGeneration {
@@ -227,7 +242,7 @@ func (a *Application) startOnlineSearch(query string) {
 	}()
 }
 
-func onlineMeta(r RadioBrowserResult) string {
+func onlineMeta(r onlineStation) string {
 	parts := make([]string, 0, 2)
 	if r.countryCode != "" {
 		parts = append(parts, r.countryCode)
@@ -254,10 +269,9 @@ func (a *Application) renderSearchResults(query string, results []searchResult, 
 	}
 
 	for i, r := range results {
-		title := r.station.title
+		title := tview.Escape(r.station.title)
 		shortcut := rune(0)
 		if online {
-			title = stripBraces(title)
 			shortcut = idxToRune(i)
 		}
 		if r.meta != "" {
@@ -272,60 +286,26 @@ func (a *Application) renderSearchResults(query string, results []searchResult, 
 }
 
 func (a *Application) selectSearchResult(query string, stations []Station, selected Station, online bool) {
-	a.openSearchInMain(query, stations, online)
-
-	stationIndex := a.findStationIndex(selected.url, stations)
-	a.stationsList.SetCurrentItem(stationIndex)
-	go a.togglePlayManual(selected)
+	a.openSearch(query, stations, online)
+	a.selectStation(selected.url)
+	a.togglePlayManual(selected)
 }
 
 // search is triggered by Enter in local mode: shows the matching stations in
 // the main view without starting playback.
 func (a *Application) search(query string) {
-	matchedStations := a.filterStations(query)
-
-	if len(matchedStations) > 0 {
-		a.openSearchInMain(query, matchedStations, false)
+	if stations := searchStations(a.stations, query); len(stations) > 0 {
+		a.openSearch(query, stations, false)
 	}
 }
 
-func (a *Application) openSearchInMain(query string, stations []Station, online bool) {
+// openSearch shows search results in the stations list, and adds the search
+// to the tags.
+func (a *Application) openSearch(query string, stations []Station, online bool) {
 	a.tag = query
-	a.lastSearchTag = a.tag
-	if online {
-		a.lastOnlineStations = stations
-	} else {
-		a.lastOnlineStations = nil
-	}
-	a.setupStationsList(a.stationsList, stations)
-	a.refreshTagsPage()
-	a.show(Main)
+	a.lastSearch = searchView{query: query, stations: stations, online: online}
+	a.showStations(stations)
+	a.refreshTags()
+	a.show(pageMain)
 	a.hideSearchModal()
-}
-
-func fuzzyMatch(station Station, queryWords []string) bool {
-	stationTitle := strings.ToLower(station.title)
-
-	for _, word := range queryWords {
-		wordFound := false
-
-		if strings.Contains(stationTitle, word) {
-			wordFound = true
-		}
-
-		if !wordFound {
-			for _, tag := range station.tags {
-				if strings.Contains(strings.ToLower(tag), word) {
-					wordFound = true
-					break
-				}
-			}
-		}
-
-		if !wordFound {
-			return false
-		}
-	}
-
-	return true
 }

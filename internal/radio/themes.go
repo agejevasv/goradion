@@ -167,7 +167,7 @@ func (a *Application) setTheme(t theme) {
 	a.applySearchColors()
 
 	// Station and tag labels carry colour tags.
-	a.setupTagsList()
+	a.showTags()
 	a.reloadStations()
 }
 

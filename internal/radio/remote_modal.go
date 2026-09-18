@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agejevasv/goradion/internal/logging"
 	"github.com/rivo/tview"
 )
 
@@ -18,7 +19,7 @@ func (a *Application) setupRemoteModal() {
 
 	a.remoteModal = tview.NewFlex()
 
-	a.pages.AddPage(a.pageNames[RemotePage], a.remoteModal, true, false)
+	a.addPage(pageRemote, a.remoteModal, false)
 }
 
 func (a *Application) toggleRemoteModal() {
@@ -40,7 +41,7 @@ func (a *Application) showRemoteModal() {
 		var qrErr error
 		qr, qrWidth, qrHeight, qrErr = qrText(r.URL())
 		if qrErr != nil {
-			log.Printf("remote: qr: %v", qrErr)
+			logging.Printf("remote: qr: %v", qrErr)
 		}
 
 		var sb strings.Builder
@@ -80,14 +81,14 @@ func (a *Application) showRemoteModal() {
 
 	centerIn(a.remoteModal, content, width, height)
 
-	a.pages.ShowPage(a.pageNames[RemotePage])
+	a.showModal(pageRemote)
 	a.app.SetFocus(a.remoteText)
 }
 
 func (a *Application) hideRemoteModal() {
-	a.pages.HidePage(a.pageNames[RemotePage])
+	a.hideModal(pageRemote)
 }
 
 func (a *Application) isRemoteModalOpen() bool {
-	return a.pages.GetPageNames(true)[0] == a.pageNames[RemotePage]
+	return a.isFront(pageRemote)
 }

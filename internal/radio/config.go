@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/agejevasv/goradion/internal/logging"
 	"gopkg.in/yaml.v3"
 )
 
@@ -79,7 +80,7 @@ func loadConfig() *config {
 		err = c.parse(data)
 	}
 	if err != nil {
-		log.Printf("config: %v", err)
+		logging.Printf("config: %v", err)
 		c.readOnly = true
 		c.parse([]byte(defaultConfigText()))
 	}
@@ -138,9 +139,28 @@ func setMapValue(m, key, value *yaml.Node) {
 	m.Content = append(m.Content, key, value)
 }
 
+// writeFile replaces the file through a rename, so that a crash never leaves
+// it half written.
 func writeFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }

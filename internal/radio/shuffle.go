@@ -2,154 +2,108 @@ package radio
 
 import (
 	"context"
-	"math/rand"
 	"time"
 )
 
-func (a *Application) toggleTimedRandom() {
-	if a.timedRandomActive {
-		if a.timedRandomCancel != nil {
-			a.timedRandomCancel()
-		}
+const (
+	defaultShuffleInterval = 5 * time.Minute
+	shuffleFade            = 2 * time.Second
+	playbackTimeout        = 30 * time.Second
+)
 
-		a.player.Lock()
-		if a.player.fadeCancel != nil {
-			a.player.fadeCancel()
-		}
-		a.player.Unlock()
+// shuffle plays a random station of the list every interval, fading between
+// them. Its fields belong to the UI goroutine.
+type shuffle struct {
+	active   bool
+	interval time.Duration
+	start    time.Time // when the current interval began
+	fade     time.Duration
+	cancel   context.CancelFunc
+}
 
-		a.timedRandomActive = false
-		a.publishShuffle()
+func (s *shuffle) remaining(now time.Time) time.Duration {
+	return max(s.interval-now.Sub(s.start), 0)
+}
+
+func (a *Application) toggleShuffle() {
+	if a.shuffle.active {
+		a.stopShuffle()
 		return
 	}
+	a.shuffle.active = true
+	a.playRandom()
+	a.restartShuffle()
+}
 
-	a.timedRandomActive = true
-	a.shuffleIterationStartAt = time.Now()
-	ctx, cancel := context.WithCancel(context.Background())
-	a.timedRandomCancel = cancel
-
-	a.publishShuffle()
-
-	stations := a.getStationsFromCurrentView()
-	if len(stations) > 0 {
-		r := rand.Intn(len(stations))
-		for len(stations) > 1 && a.player.info.Url == stations[r].url {
-			r = rand.Intn(len(stations))
-		}
-		offset := a.calculateStationListOffset()
-		a.stationsList.SetCurrentItem(r + offset)
-		go a.togglePlay(stations[r])
+func (a *Application) stopShuffle() {
+	if !a.shuffle.active {
+		return
 	}
-
-	go a.timedRandomLoop(ctx)
+	a.shuffle.active = false
+	a.shuffle.cancel()
 }
 
 func (a *Application) setShuffleInterval(minutes int) {
-	a.shuffleInterval = time.Duration(minutes) * time.Minute
-	if !a.timedRandomActive {
-		a.publishShuffle()
-		return
+	a.shuffle.interval = time.Duration(minutes) * time.Minute
+	if a.shuffle.active {
+		a.restartShuffle()
 	}
+}
 
-	if a.timedRandomCancel != nil {
-		a.timedRandomCancel()
+func (a *Application) restartShuffle() {
+	if a.shuffle.cancel != nil {
+		a.shuffle.cancel()
 	}
-	a.player.Lock()
-	if a.player.fadeCancel != nil {
-		a.player.fadeCancel()
-	}
-	a.player.Unlock()
-
-	a.shuffleIterationStartAt = time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
-	a.timedRandomCancel = cancel
-
-	a.publishShuffle()
-
-	go a.timedRandomLoop(ctx)
+	a.shuffle.cancel = cancel
+	a.shuffle.start = time.Now()
+	go a.shuffleLoop(ctx, a.shuffle.interval, a.shuffle.fade)
 }
 
-// publishShuffle must be called by the goroutine that changed the shuffle
-// state, never by the UI goroutine.
-func (a *Application) publishShuffle() {
-	active, start, interval := a.timedRandomActive, a.shuffleIterationStartAt, a.shuffleInterval
-	a.app.QueueUpdateDraw(func() {
-		a.card.shuffleActive, a.card.shuffleStart, a.card.shuffleInterval = active, start, interval
-	})
-}
-
-func (a *Application) timedRandomLoop(ctx context.Context) {
-	ticker := time.NewTicker(a.shuffleInterval)
-	defer ticker.Stop()
-
+func (a *Application) shuffleLoop(ctx context.Context, interval, fade time.Duration) {
+	timer := time.NewTimer(interval)
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			fadeCtx, fadeCancel := context.WithCancel(ctx)
-
-			a.player.Lock()
-			a.player.fadeCancel = fadeCancel
-			savedVol := a.player.info.Volume
-			a.player.Unlock()
-
-			a.player.FadeOut(fadeCtx, fadeDuration)
-
-			if fadeCtx.Err() != nil {
-				a.player.SetVolume(savedVol)
-				fadeCancel()
-				return
-			}
-
-			stations := a.getStationsFromCurrentView()
-			if len(stations) > 0 {
-				r := rand.Intn(len(stations))
-				for len(stations) > 1 && a.player.info.Url == stations[r].url {
-					r = rand.Intn(len(stations))
-				}
-				offset := a.calculateStationListOffset()
-				a.stationsList.SetCurrentItem(r + offset)
-
-				a.waitingForPlayback = make(chan struct{})
-				a.waitingForURL = stations[r].url
-				go a.togglePlay(stations[r])
-				a.shuffleIterationStartAt = time.Now()
-				a.publishShuffle()
-
-				select {
-				case <-a.waitingForPlayback:
-				case <-fadeCtx.Done():
-					a.waitingForPlayback = nil
-					a.waitingForURL = ""
-					a.player.SetVolume(savedVol)
-					fadeCancel()
-					return
-				case <-time.After(30 * time.Second):
-				}
-
-				a.waitingForPlayback = nil
-				a.waitingForURL = ""
-			}
-
-			if fadeCtx.Err() != nil {
-				a.player.SetVolume(savedVol)
-				fadeCancel()
-				return
-			}
-
-			a.player.FadeIn(fadeCtx, fadeDuration)
-
-			if fadeCtx.Err() != nil {
-				a.player.SetVolume(savedVol)
-				fadeCancel()
-				return
-			}
-
-			fadeCancel()
-			a.player.Lock()
-			a.player.fadeCancel = nil
-			a.player.Unlock()
+		case <-timer.C:
 		}
+		if ctx.Err() != nil {
+			return
+		}
+		picked := a.shuffleNext(ctx, fade, playbackTimeout)
+		timer.Reset(interval - time.Since(picked))
 	}
+}
+
+// shuffleNext fades out, plays a random station and fades back in once it
+// plays, or after timeout. It returns when the station was picked. Cancelling
+// ctx restores the volume at once.
+func (a *Application) shuffleNext(ctx context.Context, fade, timeout time.Duration) time.Time {
+	volume := a.player.Volume()
+	defer func() {
+		if ctx.Err() != nil {
+			a.player.SetVolume(volume)
+		}
+	}()
+
+	a.player.Fade(ctx, 0, fade)
+	picked := time.Now()
+	var url string
+	a.app.QueueUpdateDraw(func() {
+		if ctx.Err() != nil {
+			return
+		}
+		picked = time.Now()
+		a.shuffle.start = picked
+		if s, ok := a.playRandom(); ok {
+			url = s.url
+		}
+	})
+	if url != "" {
+		a.player.WaitPlaying(ctx, url, timeout)
+	}
+	a.player.Fade(ctx, volume, fade)
+	return picked
 }

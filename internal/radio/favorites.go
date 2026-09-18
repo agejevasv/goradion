@@ -2,18 +2,19 @@ package radio
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"sync"
 	"time"
+
+	"github.com/agejevasv/goradion/internal/logging"
 )
 
-const minPlays = 1
-const maxFavs = int('z' - 'a' + 1)
+// maxFavorites keeps every favourite on a letter shortcut.
+const maxFavorites = int('z' - 'a' + 1)
 
-func getFavoritesFile() string {
+func favoritesFile() string {
 	return filepath.Join(configDir(), "favorites.json")
 }
 
@@ -24,130 +25,108 @@ type FavoriteStation struct {
 	LastPlayed time.Time `json:"last_played"`
 }
 
+// Favorites are the stations played most, among the ones in the stations
+// list. Its methods are safe for concurrent use.
 type Favorites struct {
-	Stations          map[string]*FavoriteStation `json:"stations"`
-	availableStations map[string]bool
-	stationsByURL     map[string]Station
-	mu                sync.Mutex
+	mu       sync.Mutex
+	path     string
+	Stations map[string]*FavoriteStation `json:"stations"`
+	known    map[string]Station          // the stations list by URL
 }
 
 func NewFavorites(stations []Station) *Favorites {
-	availableStations := make(map[string]bool)
-	stationsByURL := make(map[string]Station)
-	for _, station := range stations {
-		availableStations[station.url] = true
-		stationsByURL[station.url] = station
+	f := &Favorites{
+		path:     favoritesFile(),
+		Stations: make(map[string]*FavoriteStation),
+		known:    make(map[string]Station, len(stations)),
+	}
+	for _, s := range stations {
+		f.known[s.url] = s
 	}
 
-	favorites := &Favorites{
-		Stations:          make(map[string]*FavoriteStation),
-		availableStations: availableStations,
-		stationsByURL:     stationsByURL,
-	}
-
-	data, err := os.ReadFile(getFavoritesFile())
+	data, err := os.ReadFile(f.path)
 	if err != nil {
-		return favorites
+		if !os.IsNotExist(err) {
+			logging.Printf("favorites: %v", err)
+		}
+		return f
 	}
-
-	if err := json.Unmarshal(data, favorites); err != nil {
-		log.Printf("Failed to unmarshal favorites: %v", err)
+	if err := json.Unmarshal(data, f); err != nil {
+		logging.Printf("favorites: %v", err)
 	}
-	return favorites
+	for url, fav := range f.Stations {
+		if fav == nil {
+			delete(f.Stations, url)
+		}
+	}
+	return f
 }
 
-func (f *Favorites) save() error {
-	data, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
-		return err
-	}
-	return writeFile(getFavoritesFile(), data)
-}
-
+// track counts a play and saves the file.
 func (f *Favorites) track(station Station) {
 	if station.url == "" {
 		return
 	}
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	title := station.title
-	if currentStation, ok := f.stationsByURL[station.url]; ok {
-		title = currentStation.title
+	fav := f.Stations[station.url]
+	if fav == nil {
+		fav = &FavoriteStation{URL: station.url}
+		f.Stations[station.url] = fav
 	}
+	fav.Title = f.titleLocked(fav.URL, station.title)
+	fav.PlayCount++
+	fav.LastPlayed = time.Now()
 
-	if f.Stations[station.url] == nil {
-		f.Stations[station.url] = &FavoriteStation{
-			URL:   station.url,
-			Title: title,
-		}
+	data, err := json.MarshalIndent(f, "", "  ")
+	if err == nil {
+		err = writeFile(f.path, data)
 	}
-
-	f.Stations[station.url].Title = title
-	f.Stations[station.url].PlayCount++
-	f.Stations[station.url].LastPlayed = time.Now()
-	if err := f.save(); err != nil {
-		log.Printf("Failed to save favorites: %v", err)
+	if err != nil {
+		logging.Printf("favorites: %v", err)
 	}
 }
 
-func (f *Favorites) getFavoriteStations() []Station {
+// titleLocked prefers the title in the stations list, which may have changed
+// since the station was played.
+func (f *Favorites) titleLocked(url, fallback string) string {
+	if s, ok := f.known[url]; ok {
+		return s.title
+	}
+	return fallback
+}
+
+// list returns the favourites most played first, then most recently played.
+func (f *Favorites) list() []Station {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if len(f.Stations) == 0 {
-		return nil
-	}
-
-	var favStations []*FavoriteStation
+	favs := make([]*FavoriteStation, 0, len(f.Stations))
 	for _, fav := range f.Stations {
-		if fav.PlayCount >= minPlays && f.availableStations[fav.URL] {
-			favStations = append(favStations, fav)
+		if _, ok := f.known[fav.URL]; ok && fav.PlayCount > 0 {
+			favs = append(favs, fav)
 		}
 	}
-
-	if len(favStations) == 0 {
-		return nil
-	}
-
-	sort.Slice(favStations, func(i, j int) bool {
-		if favStations[i].PlayCount == favStations[j].PlayCount {
-			return favStations[i].LastPlayed.After(favStations[j].LastPlayed)
+	slices.SortFunc(favs, func(a, b *FavoriteStation) int {
+		if a.PlayCount != b.PlayCount {
+			return b.PlayCount - a.PlayCount
 		}
-		return favStations[i].PlayCount > favStations[j].PlayCount
+		return b.LastPlayed.Compare(a.LastPlayed)
 	})
 
-	var stations []Station
-
-	for i, fav := range favStations {
-		if i >= maxFavs {
-			break
-		}
-
-		title := fav.Title
-		if currentStation, ok := f.stationsByURL[fav.URL]; ok {
-			title = currentStation.title
-		}
-
+	stations := make([]Station, 0, min(len(favs), maxFavorites))
+	for _, fav := range favs[:min(len(favs), maxFavorites)] {
 		stations = append(stations, Station{
-			title: fmt.Sprintf("%s %s(%d)[-]", title, fgTag(colorDim), fav.PlayCount),
+			title: f.titleLocked(fav.URL, fav.Title),
 			url:   fav.URL,
 			tags:  []string{favoritesTag},
+			plays: fav.PlayCount,
 		})
 	}
-
 	return stations
 }
 
-func (f *Favorites) hasFavorites() bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	for _, fav := range f.Stations {
-		if fav.PlayCount >= minPlays {
-			return true
-		}
-	}
-	return false
+func (f *Favorites) empty() bool {
+	return len(f.list()) == 0
 }

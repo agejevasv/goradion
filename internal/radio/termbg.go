@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/agejevasv/goradion/internal/logging"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -29,7 +30,7 @@ func (a *Application) syncTermBg(screen tcell.Screen) {
 		return
 	}
 	if _, err := tty.Write([]byte(termBgSequence(colorBg))); err != nil {
-		log.Printf("terminal background: %v", err)
+		logging.Printf("terminal background: %v", err)
 	}
 	a.termBg = colorBg
 }

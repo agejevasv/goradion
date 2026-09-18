@@ -31,9 +31,6 @@ func TestThemes(t *testing.T) {
 	if got := termBgSequence(tcell.ColorDefault); got != resetTermBg {
 		t.Errorf("OSC 111 = %q", got)
 	}
-	if got := stripPlayCount("Radio " + fgTag(colorDim) + "(12)[-]"); got != "Radio" {
-		t.Errorf("stripPlayCount = %q", got)
-	}
 }
 
 func TestThemeModal(t *testing.T) {
@@ -48,7 +45,7 @@ func TestThemeModal(t *testing.T) {
 
 	screen.InjectKey(tcell.KeyCtrlT, 0, tcell.ModNone)
 	waitFor(t, "theme panel", func() bool {
-		return onUI(a, func() bool { return strings.Contains(screenText(screen), " Theme ") })
+		return strings.Contains(screenText(a, screen), " Theme ")
 	})
 	screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone)
 	waitFor(t, "preview", func() bool { return onUI(a, func() tcell.Color { return bgAt(0, 0) }) == monokai.bg })
@@ -58,18 +55,18 @@ func TestThemeModal(t *testing.T) {
 
 	screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone)
 	waitFor(t, "cancel", func() bool {
-		return onUI(a, func() bool { return !a.isThemeModalOpen() && bgAt(0, 0) == tcell.ColorDefault })
+		return onUI(a, func() bool { return !a.isFront(pageTheme) && bgAt(0, 0) == tcell.ColorDefault })
 	})
 
 	screen.InjectKey(tcell.KeyCtrlT, 0, tcell.ModNone)
-	waitFor(t, "theme panel again", func() bool { return onUI(a, a.isThemeModalOpen) })
+	waitFor(t, "theme panel again", func() bool { return onUI(a, func() bool { return a.isFront(pageTheme) }) })
 	screen.InjectKey(tcell.KeyRune, 'b', tcell.ModNone)
 	waitFor(t, "saved", func() bool { return onUI(a, func() string { return a.config.Theme }) == "monokai" })
 	data, _ := os.ReadFile(configFile())
 	if !strings.Contains(string(data), "theme: monokai") {
 		t.Fatalf("config = %q", data)
 	}
-	if onUI(a, a.isThemeModalOpen) || onUI(a, func() tcell.Color { return bgAt(0, 0) }) != monokai.bg {
+	if onUI(a, func() bool { return a.isFront(pageTheme) }) || onUI(a, func() tcell.Color { return bgAt(0, 0) }) != monokai.bg {
 		t.Fatal("the saved theme should stay after the panel closes")
 	}
 }

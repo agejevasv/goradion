@@ -16,7 +16,7 @@ const maxStationNameLen = 50
 
 var reCleanName = regexp.MustCompile(`[^a-zA-Z0-9.,'` + "`" + `"&/ ]`)
 
-type RadioBrowserResult struct {
+type onlineStation struct {
 	station     Station
 	countryCode string
 	bitrate     int
@@ -31,7 +31,7 @@ type radioBrowserStation struct {
 	Bitrate     int    `json:"bitrate"`
 }
 
-func SearchRadioBrowser(query string) ([]RadioBrowserResult, error) {
+func searchRadioBrowser(query string) ([]onlineStation, error) {
 	server, err := radioBrowserServer()
 	if err != nil {
 		server = "de1.api.radio-browser.info"
@@ -74,8 +74,8 @@ func SearchRadioBrowser(query string) ([]RadioBrowserResult, error) {
 // parseRadioBrowser drops rows without a usable name or URL, and repeated
 // stream URLs: the database holds duplicate entries with different ids for the
 // same stream. Rows arrive sorted by click count, so the first one wins.
-func parseRadioBrowser(rows []radioBrowserStation) []RadioBrowserResult {
-	results := make([]RadioBrowserResult, 0, len(rows))
+func parseRadioBrowser(rows []radioBrowserStation) []onlineStation {
+	results := make([]onlineStation, 0, len(rows))
 	seen := make(map[string]bool, len(rows))
 
 	for _, r := range rows {
@@ -103,7 +103,7 @@ func parseRadioBrowser(rows []radioBrowserStation) []RadioBrowserResult {
 			}
 		}
 
-		results = append(results, RadioBrowserResult{
+		results = append(results, onlineStation{
 			station:     Station{title: name, url: streamURL, tags: tags},
 			countryCode: r.CountryCode,
 			bitrate:     r.Bitrate,

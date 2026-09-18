@@ -47,18 +47,18 @@ func hintSegs(hints []hint, width int) []seg {
 func (a *Application) currentHints() []hint {
 	arrows := glyphs.left + " " + glyphs.right
 	switch a.frontPage() {
-	case a.pageNames[Search]:
+	case pageSearch:
 		if a.searchOnline {
 			return []hint{{"enter", "search"}, {glyphs.down, "results"}, {"^F", "search local"}, {"esc", "close"}}
 		}
 		return []hint{{"enter", "show all"}, {glyphs.down, "results"}, {"^F", "search online"}, {"esc", "close"}}
-	case a.pageNames[RemotePage]:
+	case pageRemote:
 		return []hint{{"esc", "close"}}
-	case a.pageNames[ThemePage]:
+	case pageTheme:
 		return []hint{{glyphs.up + " " + glyphs.down, "preview"}, {"enter", "apply"}, {"esc", "cancel"}}
-	case a.pageNames[Help]:
+	case pageHelp:
 		return []hint{{"esc", "back"}, {glyphs.up + " " + glyphs.down, "scroll"}}
-	case a.pageNames[Main]:
+	case pageMain:
 		tags := hint{"esc", "tags"}
 		if a.wide {
 			tags = hint{"tab", "tags"}

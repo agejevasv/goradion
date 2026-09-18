@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/agejevasv/goradion/internal/logging"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -34,7 +35,7 @@ func (a *Application) setupThemeModal() {
 
 	width := 4 + 2 + themeNameWidth + 2 + 4*2 + 4 // shortcut, mark, name, gap, swatches, frame
 	modal := centerIn(tview.NewFlex(), wheelList{a.themeList}, width, len(themes)+2)
-	a.pages.AddPage(a.pageNames[ThemePage], modal, true, false)
+	a.addPage(pageTheme, modal, false)
 }
 
 // themeLabel shows the theme's own colours, so themes can be compared without
@@ -65,12 +66,12 @@ func (a *Application) showThemeModal() {
 		a.themeList.SetItemText(i, themeLabel(t, saved), "")
 	}
 	a.themeList.SetCurrentItem(current)
-	a.pages.ShowPage(a.pageNames[ThemePage])
+	a.showModal(pageTheme)
 	a.app.SetFocus(a.themeList)
 }
 
 func (a *Application) hideThemeModal() {
-	a.pages.HidePage(a.pageNames[ThemePage])
+	a.hideModal(pageTheme)
 }
 
 func (a *Application) cancelThemeModal() {
@@ -82,11 +83,7 @@ func (a *Application) cancelThemeModal() {
 func (a *Application) saveTheme(name string) {
 	a.config.Theme = name
 	if err := a.config.save(); err != nil {
-		log.Printf("config: %v", err)
+		logging.Printf("config: %v", err)
 	}
 	a.hideThemeModal()
-}
-
-func (a *Application) isThemeModalOpen() bool {
-	return a.frontPage() == a.pageNames[ThemePage]
 }

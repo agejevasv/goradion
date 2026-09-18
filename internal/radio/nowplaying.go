@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agejevasv/goradion/internal/mpv"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -19,22 +20,13 @@ const (
 	vuStale      = 700 * time.Millisecond
 )
 
-type playState int
-
-const (
-	stateIdle playState = iota
-	stateStopped
-	stateBuffering
-	statePlaying
-	stateFailed
-)
-
 // nowPlaying is only touched on the UI goroutine.
 type nowPlaying struct {
 	*tview.Box
-	app *Application
+	player  *mpv.Player
+	shuffle *shuffle
 
-	info    Info
+	info    mpv.Info
 	hasInfo bool
 
 	playingSince time.Time
@@ -43,15 +35,10 @@ type nowPlaying struct {
 
 	level, peak float64
 	peakAt      time.Time
-	bands       [bandCount]float64
+	bands       [mpv.BandCount]float64
 	levelTick   time.Time
 	meterOK     bool // the player measures the level
 	spectrumOK  bool // and the bands too
-
-	// A copy of the shuffle state, see publishShuffle.
-	shuffleActive   bool
-	shuffleStart    time.Time
-	shuffleInterval time.Duration
 
 	gaugeX, gaugeY, gaugeW int
 
@@ -65,25 +52,25 @@ type cardFrame struct {
 	gaugeX, gaugeW int
 }
 
-func newNowPlaying(a *Application) *nowPlaying {
-	n := &nowPlaying{Box: tview.NewBox(), app: a, meterOK: true, spectrumOK: true}
+func newNowPlaying(player *mpv.Player, sh *shuffle) *nowPlaying {
+	n := &nowPlaying{Box: tview.NewBox(), player: player, shuffle: sh, meterOK: true, spectrumOK: true}
 	n.SetBorder(true)
 	return n
 }
 
-func (n *nowPlaying) update(inf Info, now time.Time) {
+func (n *nowPlaying) update(inf mpv.Info, now time.Time) {
 	prev := n.info
 	if n.hasInfo && inf.Volume != prev.Volume {
 		n.flash(now)
 	}
-	if inf.Url != prev.Url || inf.Station != prev.Station || inf.Status == buffering || inf.Status == stopped {
+	if inf.URL != prev.URL || inf.Station != prev.Station || inf.State == mpv.Buffering || inf.State == mpv.Stopped {
 		n.playingSince = time.Time{}
 	}
 	if inf.Song != prev.Song {
 		n.songSince = now
 	}
 	n.info, n.hasInfo = inf, true
-	if n.state() == statePlaying && n.playingSince.IsZero() {
+	if n.state() == mpv.Playing && n.playingSince.IsZero() {
 		n.playingSince = now
 	}
 }
@@ -92,119 +79,72 @@ func (n *nowPlaying) flash(now time.Time) {
 	n.flashUntil = now.Add(volumeFlash)
 }
 
-func (n *nowPlaying) state() playState {
+func (n *nowPlaying) state() mpv.State {
 	inf := n.info
 	switch {
 	case !n.hasInfo || inf.Station == "":
-		return stateIdle
-	case inf.Status == stopped || inf.Url == "":
-		return stateStopped
-	case inf.Status == buffering:
-		return stateBuffering
-	case strings.HasPrefix(inf.Status, "Network or stream issues"):
-		return stateFailed
-	default:
-		return statePlaying
+		return mpv.Idle
+	case inf.URL == "":
+		return mpv.Stopped
 	}
+	return inf.State
 }
 
-func (n *nowPlaying) playingURL() (string, playState) {
+func (n *nowPlaying) playingURL() (string, mpv.State) {
 	st := n.state()
-	if st == stateIdle || st == stateStopped {
+	if st == mpv.Idle || st == mpv.Stopped {
 		return "", st
 	}
-	return n.info.Url, st
-}
-
-// meterSource is the player, as far as the meter is concerned.
-type meterSource interface {
-	Level() (level float64, at time.Time, ok bool)
-	Spectrum() (bands [bandCount]float64, at time.Time, ok bool)
-}
-
-func (n *nowPlaying) advance(now time.Time, src meterSource) {
-	dt := now.Sub(n.levelTick).Seconds()
-	if n.levelTick.IsZero() || dt > 0.5 || dt < 0 {
-		dt = 0.05
-	}
-	n.levelTick = now
-	playing := n.state() == statePlaying
-
-	raw, rawAt, ok := src.Level()
-	n.meterOK = ok
-	target := 0.0
-	if ok && playing && now.Sub(rawAt) < vuStale {
-		target = raw
-	}
-	n.level = follow(n.level, target, dt)
-	if n.level >= n.peak {
-		n.peak, n.peakAt = n.level, now
-	} else if now.Sub(n.peakAt) > vuPeakHold {
-		n.peak = max(n.level, n.peak-vuFallPerSec*dt)
-	}
-
-	bands, bandsAt, ok := src.Spectrum()
-	n.spectrumOK = ok
-	fresh := ok && playing && now.Sub(bandsAt) < vuStale
-	for i := range n.bands {
-		if !fresh {
-			bands[i] = 0
-		}
-		n.bands[i] = follow(n.bands[i], bands[i], dt)
-	}
-}
-
-// follow jumps up to a louder target and falls slowly towards a quieter one.
-func follow(current, target, dt float64) float64 {
-	if target >= current {
-		return target
-	}
-	return max(target, current-vuFallPerSec*dt)
+	return n.info.URL, st
 }
 
 func (n *nowPlaying) animating(now time.Time) bool {
 	st := n.state()
-	return st == stateBuffering || st == statePlaying || st == stateFailed ||
-		now.Before(n.flashUntil) || n.shuffleActive || n.level > 0 || n.peak > 0 ||
-		n.bands != [bandCount]float64{}
+	return st == mpv.Buffering || st == mpv.Playing || st == mpv.Failed ||
+		now.Before(n.flashUntil) || n.shuffling() || n.level > 0 || n.peak > 0 ||
+		n.bands != [mpv.BandCount]float64{}
 }
 
-func (n *nowPlaying) previousTrack() (Track, bool) {
-	playing := n.state() == statePlaying
+func (n *nowPlaying) shuffling() bool {
+	return n.shuffle != nil && n.shuffle.active && n.shuffle.interval > 0
+}
+
+func (n *nowPlaying) previousTrack() (mpv.Track, bool) {
+	playing := n.state() == mpv.Playing
 	for i := len(n.info.History) - 1; i >= 0; i-- {
 		if t := n.info.History[i]; !playing || t.Song != n.info.Song {
 			return t, true
 		}
 	}
-	return Track{}, false
+	return mpv.Track{}, false
 }
 
 func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 	var f cardFrame
 	inf := n.info
-	station := stripPlayCount(inf.Station)
+	station := inf.Station
 	st := n.state()
 	strong := styleText.Bold(true)
 
 	var left, right []seg
 	switch st {
-	case stateIdle:
+	case mpv.Idle:
 		f.title = []seg{{" Now playing ", styleDim}}
 		left = []seg{{"Nothing playing", styleText}}
-	case stateStopped:
+	case mpv.Stopped:
 		f.title = []seg{{" Stopped ", styleDim}}
 		left = []seg{{glyphs.stop + " ", styleDim}, {station, styleText}}
-	case stateBuffering:
+	case mpv.Buffering:
 		f.title = []seg{{" Tuning in ", styleText.Foreground(colorWarn)}}
 		left = []seg{{spinnerFrame(now) + " ", styleText.Foreground(colorWarn)}, {station, strong}}
-	case stateFailed:
+	case mpv.Failed:
 		f.title = []seg{{" Signal lost ", styleText.Foreground(colorDanger)}}
 		left = []seg{{glyphs.fail + " ", styleText.Foreground(colorDanger).Bold(true)}, {station, strong}}
-	case statePlaying:
+	case mpv.Playing:
 		f.title = []seg{{" Now playing ", styleAccent.Bold(true)}}
 		left = []seg{{glyphs.play + " ", styleAccent}, {station, strong}}
 	}
-	if st == statePlaying || st == stateBuffering {
+	if st == mpv.Playing || st == mpv.Buffering {
 		if n.meterOK {
 			right = append(right, n.meter()...)
 		}
@@ -219,13 +159,13 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 
 	left, right = nil, nil
 	switch st {
-	case stateIdle, stateStopped:
+	case mpv.Idle, mpv.Stopped:
 		left = []seg{{"Pick a station, or press * for a random one.", styleDim}}
-	case stateBuffering:
+	case mpv.Buffering:
 		left = []seg{{"Buffering" + glyphs.ellipsis, styleDim}}
-	case stateFailed:
+	case mpv.Failed:
 		left = []seg{{inf.Status, styleText.Foreground(colorDanger)}, {" " + glyphs.dot + " retrying", styleDim}}
-	case statePlaying:
+	case mpv.Playing:
 		if !n.playingSince.IsZero() {
 			right = []seg{{clock(now.Sub(n.playingSince)) + " on air", styleDim}}
 		}
@@ -255,7 +195,7 @@ func (n *nowPlaying) gauges(now time.Time, width int, f *cardFrame) []seg {
 
 	const volLabel = "vol "
 	half := width
-	if n.shuffleActive {
+	if n.shuffling() {
 		half = (width - 3) / 2
 	}
 	volGauge := min(max(half-len(volLabel)-5, 4), 30)
@@ -264,8 +204,8 @@ func (n *nowPlaying) gauges(now time.Time, width int, f *cardFrame) []seg {
 	row = append(row, gauge(volGauge, float64(n.info.Volume)/100, fill, styleDim)...)
 	row = append(row, seg{fmt.Sprintf(" %d%%", n.info.Volume), pct})
 
-	if n.shuffleActive && n.shuffleInterval > 0 {
-		remaining := max(n.shuffleInterval-now.Sub(n.shuffleStart), 0)
+	if n.shuffling() {
+		remaining := n.shuffle.remaining(now)
 		label := "shuffle "
 		if glyphs.shuffle != "" {
 			label = glyphs.shuffle + " " + label
@@ -273,7 +213,7 @@ func (n *nowPlaying) gauges(now time.Time, width int, f *cardFrame) []seg {
 		timeText := " " + clock(remaining+time.Second-1)
 		labelW := segsWidth([]seg{{label, styleText}})
 		shuffleGauge := min(max(half-labelW-len(timeText), 4), 30)
-		elapsed := 1 - remaining.Seconds()/n.shuffleInterval.Seconds()
+		elapsed := 1 - remaining.Seconds()/n.shuffle.interval.Seconds()
 		right := []seg{{label, styleText.Foreground(colorWarn)}}
 		right = append(right, gauge(shuffleGauge, elapsed, styleText.Foreground(colorWarn), styleDim)...)
 		right = append(right, seg{timeText, styleText})
@@ -286,50 +226,6 @@ func (n *nowPlaying) gauges(now time.Time, width int, f *cardFrame) []seg {
 		}
 	}
 	return fitSegs(row, width)
-}
-
-// meter draws the spectrum, one cell per band with the bass on the left, or
-// the level when the player measures nothing else.
-func (n *nowPlaying) meter() []seg {
-	if !n.spectrumOK {
-		return n.levelMeter()
-	}
-	const steps = 8
-	out := make([]seg, bandCount)
-	for i, level := range n.bands {
-		step := min(int(math.Round(level*steps)), steps)
-		if step <= 0 {
-			out[i] = seg{glyphs.bands[0], styleDim}
-			continue
-		}
-		out[i] = seg{glyphs.bands[(step-1)*len(glyphs.bands)/steps], styleAccent}
-	}
-	return out
-}
-
-func (n *nowPlaying) levelMeter() []seg {
-	lit := int(math.Round(n.level * vuCells))
-	peak := int(math.Round(n.peak*vuCells)) - 1
-	out := make([]seg, vuCells)
-	for i := range out {
-		if i < lit || (i == peak && n.peak > 0.05) {
-			out[i] = seg{glyphs.vuLit[i], styleText.Foreground(vuColor(i))}
-		} else {
-			out[i] = seg{glyphs.vuUnlit[i], styleDim}
-		}
-	}
-	return out
-}
-
-func vuColor(cell int) tcell.Color {
-	switch f := float64(cell+1) / vuCells; {
-	case f <= 0.7:
-		return colorAccent
-	case f <= 0.9:
-		return colorWarn
-	default:
-		return colorDanger
-	}
 }
 
 func spread(left, right []seg, width int) []seg {
@@ -382,20 +278,18 @@ func (n *nowPlaying) MouseHandler() func(action tview.MouseAction, event *tcell.
 		if !n.InRect(x, y) {
 			return false, nil
 		}
-		player := n.app.player
 		switch action {
 		case tview.MouseScrollUp:
 			n.flash(time.Now())
-			go player.VolumeUp()
+			n.player.ChangeVolume(mpv.VolumeStep)
 		case tview.MouseScrollDown:
 			n.flash(time.Now())
-			go player.VolumeDn()
+			n.player.ChangeVolume(-mpv.VolumeStep)
 		case tview.MouseLeftClick:
 			if y == n.gaugeY && n.gaugeW > 0 && x >= n.gaugeX-1 && x <= n.gaugeX+n.gaugeW {
 				fraction := (float64(x-n.gaugeX) + 0.5) / float64(n.gaugeW)
-				volume := min(max(int(math.Round(fraction*20))*5, 0), 100)
 				n.flash(time.Now())
-				go player.SetVolume(volume)
+				n.player.SetVolume(int(math.Round(fraction*100/mpv.VolumeStep)) * mpv.VolumeStep)
 			}
 		default:
 			return false, nil

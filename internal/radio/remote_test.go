@@ -8,89 +8,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gdamore/tcell/v2"
 )
-
-// newTestApp runs the TUI on a simulation screen. mpv is not needed: player
-// commands fail softly when the socket is missing.
-func newTestApp(t *testing.T, options ...Option) (*Application, tcell.SimulationScreen) {
-	t.Helper()
-	t.Setenv("HOME", t.TempDir())
-	InitLog(false)
-
-	screen := tcell.NewSimulationScreen("")
-	if err := screen.Init(); err != nil {
-		t.Fatal(err)
-	}
-	screen.SetSize(100, 30)
-
-	a := NewApp(NewPlayer(), Stations(""), 0, options...)
-	a.app.SetScreen(screen)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		if err := a.Run(); err != nil {
-			t.Error(err)
-		}
-	}()
-	t.Cleanup(func() {
-		select {
-		case <-done:
-		default:
-			a.app.Stop()
-			<-done
-		}
-	})
-
-	waitFor(t, "app running", func() bool {
-		done := make(chan struct{})
-		go func() { a.app.QueueUpdate(func() {}); close(done) }()
-		select {
-		case <-done:
-			return true
-		case <-time.After(50 * time.Millisecond):
-			return false
-		}
-	})
-	return a, screen
-}
-
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if cond() {
-			return
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("timed out waiting for %s", what)
-}
-
-func screenText(s tcell.SimulationScreen) string {
-	cells, w, h := s.GetContents()
-	var sb strings.Builder
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			c := cells[y*w+x]
-			if len(c.Runes) == 0 {
-				sb.WriteRune(' ')
-			} else {
-				sb.WriteRune(c.Runes[0])
-			}
-		}
-		sb.WriteRune('\n')
-	}
-	return sb.String()
-}
-
-func onUI[T any](a *Application, f func() T) T {
-	var v T
-	a.app.QueueUpdate(func() { v = f() })
-	return v
-}
 
 type client struct {
 	t   *testing.T
@@ -140,7 +60,7 @@ func TestRemoteStartupKey(t *testing.T) {
 		if r == nil {
 			t.Fatal("WithRemote must start the server with the app")
 		}
-		if onUI(a, a.isRemoteModalOpen) {
+		if onUI(a, func() bool { return a.isFront(pageRemote) }) {
 			t.Fatal("autostart must not open the modal")
 		}
 		return a, screen, r
@@ -168,7 +88,7 @@ func TestRemoteStartupKey(t *testing.T) {
 			}
 		}
 		screen.InjectKey(tcell.KeyCtrlP, 0, tcell.ModNone)
-		waitFor(t, "modal with the key", func() bool { return strings.Contains(screenText(screen), "[battery]") })
+		waitFor(t, "modal with the key", func() bool { return strings.Contains(screenText(a, screen), "[battery]") })
 		if onUI(a, func() *Remote { return a.remote }) != r {
 			t.Fatal("Ctrl+P must reuse the started server")
 		}
@@ -176,7 +96,7 @@ func TestRemoteStartupKey(t *testing.T) {
 
 	t.Run("none", func(t *testing.T) {
 		key := ""
-		_, screen, r := started(t, &key)
+		a, screen, r := started(t, &key)
 		if r.URL() != r.Address() {
 			t.Fatalf("URL %q, want %q", r.URL(), r.Address())
 		}
@@ -186,7 +106,7 @@ func TestRemoteStartupKey(t *testing.T) {
 			}
 		}
 		screen.InjectKey(tcell.KeyCtrlP, 0, tcell.ModNone)
-		waitFor(t, "no-code warning", func() bool { return strings.Contains(screenText(screen), "No access code") })
+		waitFor(t, "no-code warning", func() bool { return strings.Contains(screenText(a, screen), "No access code") })
 	})
 }
 
@@ -195,26 +115,27 @@ func TestRemoteControl(t *testing.T) {
 
 	screen.InjectKey(tcell.KeyCtrlP, 0, tcell.ModNone)
 	waitFor(t, "remote server", func() bool { return onUI(a, func() *Remote { return a.remote }) != nil })
-	if !onUI(a, a.isRemoteModalOpen) {
+	if !onUI(a, func() bool { return a.isFront(pageRemote) }) {
 		t.Fatal("remote modal should be open")
 	}
-	first := a.remote
+	remote := func() *Remote { return onUI(a, func() *Remote { return a.remote }) }
+	first := remote()
 	waitFor(t, "modal drawn", func() bool {
-		txt := screenText(screen)
+		txt := screenText(a, screen)
 		return strings.Contains(txt, first.Address()) && strings.Contains(txt, first.Key())
 	})
-	t.Logf("modal:\n%s", screenText(screen))
+	t.Logf("modal:\n%s", screenText(a, screen))
 
 	screen.InjectKey(tcell.KeyCtrlP, 0, tcell.ModNone)
-	waitFor(t, "modal closed", func() bool { return !onUI(a, a.isRemoteModalOpen) })
+	waitFor(t, "modal closed", func() bool { return !onUI(a, func() bool { return a.isFront(pageRemote) }) })
 	screen.InjectKey(tcell.KeyCtrlP, 0, tcell.ModNone)
-	waitFor(t, "modal reopened", func() bool { return onUI(a, a.isRemoteModalOpen) })
-	if a.remote != first {
+	waitFor(t, "modal reopened", func() bool { return onUI(a, func() bool { return a.isFront(pageRemote) }) })
+	if remote() != first {
 		t.Fatal("Ctrl+P must not start a second server")
 	}
 	screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone)
-	waitFor(t, "modal closed by Esc", func() bool { return !onUI(a, a.isRemoteModalOpen) })
-	if onUI(a, func() string { return a.pages.GetPageNames(true)[0] }) != a.pageNames[Tags] {
+	waitFor(t, "modal closed by Esc", func() bool { return !onUI(a, func() bool { return a.isFront(pageRemote) }) })
+	if onUI(a, a.frontPage) != pageTags {
 		t.Fatal("Esc on the modal must not quit or change the page")
 	}
 
@@ -271,7 +192,7 @@ func TestRemoteControl(t *testing.T) {
 	if code != 200 || st.Player.URL != target.URL || !st.Stations[1].Playing || st.Stations[0].Playing {
 		t.Fatalf("play: %d %+v", code, st.Player)
 	}
-	if idx := onUI(a, a.stationsList.GetCurrentItem); idx != 1+a.calculateStationListOffset() {
+	if idx := onUI(a, a.stationsList.GetCurrentItem); idx != 1+a.stationOffset() {
 		t.Fatalf("TUI selection = %d", idx)
 	}
 	if code, _ := c.do("POST", "/api/play", map[string]any{"url": "http://nope"}); code != 404 {
@@ -288,7 +209,7 @@ func TestRemoteControl(t *testing.T) {
 	}
 
 	_, st = c.do("POST", "/api/stop", nil)
-	if st.Player.URL != "" || st.Player.Status != stopped {
+	if st.Player.URL != "" || st.Player.Status != "Stopped" {
 		t.Fatalf("stop: %+v", st.Player)
 	}
 	_, st = c.do("POST", "/api/play", map[string]any{"url": target.URL})
@@ -363,18 +284,15 @@ func TestRemoteControl(t *testing.T) {
 	if st.Page != "tags" {
 		t.Fatalf("tags: %+v", st.Page)
 	}
-	if onUI(a, func() string { return a.pages.GetPageNames(true)[0] }) != a.pageNames[Tags] {
+	if onUI(a, a.frontPage) != pageTags {
 		t.Fatal("TUI should show tags page")
 	}
 
-	a.app.Stop()
-	waitFor(t, "server shutdown", func() bool {
-		resp, err := http.Get(base + "/")
-		if err == nil {
-			resp.Body.Close()
-		}
-		return err != nil
-	})
+	stopTestApp(a)
+	if resp, err := http.Get(base + "/"); err == nil {
+		resp.Body.Close()
+		t.Fatal("the server must stop with the app")
+	}
 }
 
 func TestQRText(t *testing.T) {

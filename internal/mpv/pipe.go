@@ -1,6 +1,6 @@
 //go:build windows
 
-package radio
+package mpv
 
 import (
 	"fmt"

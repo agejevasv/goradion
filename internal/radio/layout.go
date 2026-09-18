@@ -3,6 +3,7 @@ package radio
 import (
 	"time"
 
+	"github.com/agejevasv/goradion/internal/mpv"
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
@@ -73,10 +74,6 @@ func centerIn(outer *tview.Flex, p tview.Primitive, width, height int) *tview.Fl
 		AddItem(nil, 0, 1, false)
 }
 
-func (a *Application) frontPage() string {
-	return a.pages.GetPageNames(true)[0]
-}
-
 // When wide, both list pages hold the same panes and differ only in focus.
 func (a *Application) buildLayout(wide bool) {
 	a.wide = wide
@@ -112,7 +109,7 @@ func (a *Application) beforeDraw(screen tcell.Screen) bool {
 		a.buildLayout(wide)
 		a.reloadStations()
 		if wide {
-			if a.frontPage() == a.pageNames[Tags] || a.tag == "" {
+			if a.isFront(pageTags) || a.tag == "" {
 				a.previewTagAtCursor()
 			} else {
 				a.syncTagCursor()
@@ -122,16 +119,8 @@ func (a *Application) beforeDraw(screen tcell.Screen) bool {
 	return false
 }
 
-func (a *Application) reloadStations() {
-	cursor := a.stationsList.GetCurrentItem() - a.calculateStationListOffset()
-	a.setupStationsList(a.stationsList, a.getStationsFromCurrentView())
-	if cursor >= 0 {
-		a.stationsList.SetCurrentItem(cursor + a.calculateStationListOffset())
-	}
-}
-
 func (a *Application) previewTagAtCursor() {
-	if i := a.tagsList.GetCurrentItem(); i >= 0 && i < len(a.tagRows) && a.tagRows[i] != "" {
+	if i := a.tagsList.GetCurrentItem(); i >= 0 && i < len(a.tagRows) {
 		a.loadTag(a.tagRows[i])
 	}
 }
@@ -205,10 +194,10 @@ func (a *Application) drawStationMarks(screen tcell.Screen) {
 			continue
 		}
 		switch state {
-		case stateBuffering:
+		case mpv.Buffering:
 			frame := spinnerFrame(time.Now())
 			recolor(i, frame, styleText.Foreground(colorWarn))
-		case stateFailed:
+		case mpv.Failed:
 			recolor(i, glyphs.fail, styleText.Foreground(colorDanger))
 		default:
 			recolor(i, glyphs.play, styleAccent)
@@ -231,25 +220,25 @@ func (a *Application) mouseCapture(event *tcell.EventMouse, action tview.MouseAc
 	}
 	x, y := event.Position()
 	switch page := a.frontPage(); page {
-	case a.pageNames[Search]:
+	case pageSearch:
 		if !a.searchContent.InRect(x, y) {
 			return event, tview.MouseMove
 		}
-	case a.pageNames[RemotePage]:
+	case pageRemote:
 		return event, tview.MouseMove
-	case a.pageNames[ThemePage]:
+	case pageTheme:
 		if !a.themeList.InRect(x, y) {
 			return event, tview.MouseMove
 		}
-	case a.pageNames[Tags], a.pageNames[Main]:
+	case pageTags, pageMain:
 		if action != tview.MouseLeftClick || !a.wide {
 			break
 		}
-		pane, to := a.stationsPane, Page(Main)
+		pane, to := a.stationsPane, pageMain
 		if a.tagsPane.InRect(x, y) {
-			pane, to = a.tagsPane, Tags
+			pane, to = a.tagsPane, pageTags
 		}
-		if pane.InRect(x, y) && page != a.pageNames[to] {
+		if pane.InRect(x, y) && page != to {
 			a.show(to)
 			// The page just shown is laid out only when drawn, so it would miss
 			// the click; the pane is shared and already in place.
