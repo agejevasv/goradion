@@ -25,11 +25,7 @@ func (a *Application) setupSearchModal() {
 			}
 		})
 
-	a.searchInput.SetFieldBackgroundColor(tcell.ColorDefault)
-	a.searchInput.SetFieldTextColor(colorText)
 	a.searchInput.SetPlaceholder("station name or tag")
-	a.searchInput.SetPlaceholderStyle(styleDim)
-	a.searchInput.SetBackgroundColor(tcell.ColorDefault)
 
 	a.searchInput.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
@@ -79,8 +75,8 @@ func (a *Application) setupSearchModal() {
 	// Pad the children, not the frame: a Flex does not clear its background.
 	a.searchInput.SetBorderPadding(0, 0, 1, 1)
 	a.searchResults.SetBorderPadding(0, 0, 1, 1)
-	a.searchContent.SetBorder(true).SetTitleAlign(tview.AlignLeft).SetBackgroundColor(tcell.ColorDefault)
-	a.applySearchMode()
+	a.searchContent.SetBorder(true).SetTitleAlign(tview.AlignLeft)
+	a.applySearchColors()
 
 	a.searchModal = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(nil, 0, 5, false).
@@ -140,20 +136,36 @@ func (a *Application) setSearchMode(online bool) {
 	a.updateSearchResults(text)
 }
 
+func (a *Application) applySearchColors() {
+	a.searchInput.SetBackgroundColor(colorBg)
+	a.searchInput.SetFieldBackgroundColor(colorBg)
+	a.searchInput.SetFieldTextColor(colorText)
+	a.searchInput.SetPlaceholderStyle(styleDim)
+	a.searchContent.SetBackgroundColor(colorBg)
+	a.searchContent.SetBorderColor(colorDim)
+	a.searchContent.SetTitleColor(colorText)
+	a.applySearchMode()
+}
+
 // applySearchMode updates the modal title and label colour to reflect the mode.
 func (a *Application) applySearchMode() {
+	// Box titles are printed over the default style, so the tags spell out the
+	// background instead of resetting it with "-".
+	badge := func(label string, bg tcell.Color) string {
+		return fmt.Sprintf("[%s:%s:b]%s[%s:%s:-]", colorTag(colorOnAccent), colorTag(bg), label, colorTag(colorText), colorTag(colorBg))
+	}
 	if a.searchOnline {
-		a.searchInput.SetLabelColor(tcell.ColorYellow)
-		a.searchContent.SetTitle(" Station Search: Local [black:yellow:b] Online [-:-:-] ")
+		a.searchInput.SetLabelColor(colorWarn)
+		a.searchContent.SetTitle(" Station Search: Local " + badge(" Online ", colorWarn) + " ")
 	} else {
-		a.searchInput.SetLabelColor(tcell.ColorGreen)
-		a.searchContent.SetTitle(" Station Search: [black:green:b] Local [-:-:-] Online ")
+		a.searchInput.SetLabelColor(colorAccent)
+		a.searchContent.SetTitle(" Station Search: " + badge(" Local ", colorAccent) + " Online ")
 	}
 }
 
 func (a *Application) showSearchPlaceholder() {
 	if a.searchOnline {
-		a.searchResults.AddItem(fmt.Sprintf("[gray]%s[-]", onlineSearchHint), "", 0, nil)
+		a.searchResults.AddItem(fgTag(colorDim)+onlineSearchHint+"[-]", "", 0, nil)
 	}
 }
 
@@ -190,7 +202,7 @@ func (a *Application) startOnlineSearch(query string) {
 	generation := a.searchGeneration
 
 	a.searchResults.Clear()
-	a.searchResults.AddItem("[yellow]Searching...[-]", "", 0, nil)
+	a.searchResults.AddItem(fgTag(colorWarn)+"Searching...[-]", "", 0, nil)
 
 	go func() {
 		found, err := SearchRadioBrowser(query)
@@ -202,7 +214,7 @@ func (a *Application) startOnlineSearch(query string) {
 
 			if err != nil {
 				a.searchResults.Clear()
-				a.searchResults.AddItem(fmt.Sprintf("[red]Error: %s[-]", err.Error()), "", 0, nil)
+				a.searchResults.AddItem(fmt.Sprintf("%sError: %s[-]", fgTag(colorDanger), tview.Escape(err.Error())), "", 0, nil)
 				return
 			}
 
@@ -231,7 +243,7 @@ func (a *Application) renderSearchResults(query string, results []searchResult, 
 
 	if len(results) == 0 {
 		if query != "" {
-			a.searchResults.AddItem("[gray]No stations match[-]", "", 0, nil)
+			a.searchResults.AddItem(fgTag(colorDim)+"No stations match[-]", "", 0, nil)
 		}
 		return
 	}
@@ -249,7 +261,7 @@ func (a *Application) renderSearchResults(query string, results []searchResult, 
 			shortcut = idxToRune(i)
 		}
 		if r.meta != "" {
-			title += fmt.Sprintf(" [gray](%s)[-]", r.meta)
+			title += fmt.Sprintf(" %s(%s)[-]", fgTag(colorDim), r.meta)
 		}
 
 		station := r.station

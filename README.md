@@ -85,3 +85,7 @@ goradion -r                  # random code, as with Ctrl+P
 goradion -r "my secret code" # a fixed code, handy for a bookmarked phone
 goradion -r ""               # no code
 ```
+
+## Themes
+Press `Ctrl+T` to pick a colour theme. It is saved in `config.yaml` (`~/.config/goradion`,
+`~/Library/Application Support/goradion` on Mac, `%APPDATA%\goradion` on Windows).

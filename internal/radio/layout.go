@@ -40,6 +40,17 @@ func (p *listPane) Draw(screen tcell.Screen) {
 	}
 }
 
+// centerIn fills outer with p, centred at a fixed size.
+func centerIn(outer *tview.Flex, p tview.Primitive, width, height int) *tview.Flex {
+	return outer.Clear().SetDirection(tview.FlexRow).
+		AddItem(nil, 0, 1, false).
+		AddItem(tview.NewFlex().
+			AddItem(nil, 0, 1, false).
+			AddItem(p, width, 0, true).
+			AddItem(nil, 0, 1, false), height, 0, true).
+		AddItem(nil, 0, 1, false)
+}
+
 func (a *Application) frontPage() string {
 	return a.pages.GetPageNames(true)[0]
 }
@@ -68,6 +79,11 @@ func (a *Application) buildLayout(wide bool) {
 }
 
 func (a *Application) beforeDraw(screen tcell.Screen) bool {
+	a.syncTermBg(screen)
+	if colorBg != tcell.ColorDefault {
+		// Flexes don't clear, so gaps between primitives would show the terminal.
+		screen.Fill(' ', styleText)
+	}
 	width, _ := screen.Size()
 	if wide := width >= wideMinWidth; wide != a.wide || !a.layoutReady {
 		a.layoutReady = true
@@ -133,7 +149,7 @@ func (a *Application) drawStationMarks(screen tcell.Screen) {
 			_, bg, _ := cell.Decompose()
 			mark := style.Background(bg)
 			if underCursor && focused {
-				mark = mark.Foreground(tcell.ColorBlack)
+				mark = mark.Foreground(colorOnAccent)
 			}
 			screen.SetContent(textX, y+row, []rune(glyph)[0], nil, mark)
 		}
@@ -143,7 +159,7 @@ func (a *Application) drawStationMarks(screen tcell.Screen) {
 		fg, _, _ := style.Decompose()
 		for cx := textX + 2; cx < x+width; cx++ {
 			mainc, comb, cell, _ := screen.GetContent(cx, y+row)
-			if cellFg, _, _ := cell.Decompose(); cellFg == tcell.ColorDefault {
+			if cellFg, _, _ := cell.Decompose(); cellFg == colorText {
 				screen.SetContent(cx, y+row, mainc, comb, cell.Foreground(fg))
 			}
 		}
@@ -199,13 +215,24 @@ func (a *Application) mouseCapture(event *tcell.EventMouse, action tview.MouseAc
 		}
 	case a.pageNames[RemotePage]:
 		return event, tview.MouseMove
+	case a.pageNames[ThemePage]:
+		if !a.themeList.InRect(x, y) {
+			return event, tview.MouseMove
+		}
 	case a.pageNames[Tags], a.pageNames[Main]:
-		if action == tview.MouseLeftClick && a.wide {
-			if a.tagsPane.InRect(x, y) && page == a.pageNames[Main] {
-				a.show(Tags)
-			} else if a.stationsPane.InRect(x, y) && page == a.pageNames[Tags] {
-				a.show(Main)
-			}
+		if action != tview.MouseLeftClick || !a.wide {
+			break
+		}
+		pane, to := a.stationsPane, Page(Main)
+		if a.tagsPane.InRect(x, y) {
+			pane, to = a.tagsPane, Tags
+		}
+		if pane.InRect(x, y) && page != a.pageNames[to] {
+			a.show(to)
+			// The page just shown is laid out only when drawn, so it would miss
+			// the click; the pane is shared and already in place.
+			pane.MouseHandler()(action, event, func(p tview.Primitive) { a.app.SetFocus(p) })
+			return nil, action
 		}
 	}
 	return event, action

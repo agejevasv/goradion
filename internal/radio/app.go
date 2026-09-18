@@ -61,6 +61,7 @@ func helpText() string {
 		}},
 		{"More", [][2]string{
 			{"Ctrl+P", "control goradion from your phone"},
+			{"Ctrl+T", "colour theme"},
 			{"?", "this help"},
 			{"Mouse", "click a station to play it, scroll lists; scroll or click the volume gauge"},
 		}},
@@ -73,13 +74,14 @@ func helpText() string {
 		}},
 	}
 	var sb strings.Builder
-	sb.WriteString("[green::b]" + VersionString() + "[-::-]\n")
+	sb.WriteString(boldTag(colorAccent) + VersionString() + "[-::-]\n")
 	for _, sec := range sections {
 		sb.WriteString("\n[::b]" + sec.title + "[::-]\n")
 		for _, k := range sec.keys {
-			sb.WriteString(fmt.Sprintf("  [green]%-15s[-] %s\n", k[0], k[1]))
+			sb.WriteString(fmt.Sprintf("  %s%-15s[-] %s\n", fgTag(colorAccent), k[0], k[1]))
 		}
 	}
+	sb.WriteString("\n[::b]Settings[::-]\n  " + tview.Escape(configFile()) + "\n")
 	return sb.String()
 }
 
@@ -91,6 +93,7 @@ const (
 	Tags
 	Search
 	RemotePage
+	ThemePage
 )
 
 type Application struct {
@@ -133,6 +136,9 @@ type Application struct {
 	remoteModal             *tview.Flex
 	remoteQR                *tview.TextView
 	remoteText              *tview.TextView
+	themeList               *tview.List
+	config                  *config
+	termBg                  tcell.Color // the terminal default background set by syncTermBg
 
 	ascii             bool
 	wide              bool
@@ -150,21 +156,28 @@ func NewApp(player *Player, stations []Station, remotePort int, options ...Optio
 	a := &Application{
 		player:          player,
 		stations:        stations,
-		pageNames:       []string{"Main", "Help", "Tags", "Search", "Remote"},
+		pageNames:       []string{"Main", "Help", "Tags", "Search", "Remote", "Theme"},
 		favorites:       NewFavorites(stations),
 		shuffleInterval: 5 * time.Minute,
 		remotePort:      remotePort,
 		ascii:           detectASCII(),
+		config:          loadConfig(),
 	}
 	for _, option := range options {
 		option(a)
 	}
-	applyTheme(a.ascii)
+	applyGlyphs(a.ascii)
+	t, ok := findTheme(a.config.Theme)
+	if !ok {
+		log.Printf("config: unknown theme %q, using %q", a.config.Theme, t.name)
+	}
+	useTheme(t)
 
 	a.setupPages()
 	a.card.info.Volume = player.info.Volume
 	a.setupSearchModal()
 	a.setupRemoteModal()
+	a.setupThemeModal()
 
 	a.app = tview.NewApplication().
 		SetRoot(a.pages, true).
@@ -186,6 +199,7 @@ func (a *Application) Run() error {
 			a.app.QueueUpdateDraw(a.showRemoteModal)
 		}
 	}
+	defer a.restoreTermBg()
 	stop := make(chan struct{})
 	defer close(stop)
 	go a.animate(stop)
@@ -227,6 +241,9 @@ func (a *Application) setupPages() {
 }
 
 func (a *Application) show(page Page) {
+	if a.isThemeModalOpen() {
+		a.cancelThemeModal()
+	}
 	a.pageHistory = append(a.pageHistory, page)
 
 	if len(a.pageHistory) > 2 {
@@ -255,6 +272,14 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 				}
 			}
 			return false
+		}
+
+		if currentPage == a.pageNames[ThemePage] {
+			if event.Key() == tcell.KeyCtrlT {
+				a.cancelThemeModal()
+				return nil
+			}
+			return event
 		}
 
 		switch key := event.Key(); key {
@@ -303,6 +328,9 @@ func (a *Application) inputCapture() func(event *tcell.EventKey) *tcell.EventKey
 			return nil
 		case tcell.KeyCtrlR:
 			go a.toggleTimedRandom()
+			return nil
+		case tcell.KeyCtrlT:
+			a.showThemeModal()
 			return nil
 		case tcell.KeyCtrlP:
 			if currentPage == a.pageNames[Search] {
@@ -484,7 +512,7 @@ func (a *Application) setupTagsList() {
 	if a.lastSearchTag != "" {
 		label := tview.Escape(a.lastSearchTag)
 		if a.lastOnlineStations != nil {
-			label += " [gray](online)[-]"
+			label += " " + fgTag(colorDim) + "(online)[-]"
 		}
 		add(label, '^', a.lastSearchTag)
 	}
@@ -636,10 +664,7 @@ func (a *Application) refreshTagsPage() {
 func newList() *tview.List {
 	list := tview.NewList()
 	list.ShowSecondaryText(false)
-	list.SetBackgroundColor(tcell.ColorDefault)
-	list.SetSelectedStyle(styleSelected)
-	list.SetMainTextStyle(styleText)
-	list.SetShortcutStyle(styleDim)
+	colorList(list)
 	return list
 }
 
@@ -668,7 +693,7 @@ func stripBraces(s string) string {
 }
 
 func stripPlayCount(s string) string {
-	re := regexp.MustCompile(` \[gray\]\(\d+\)\[-\]$`)
+	re := regexp.MustCompile(` \[[^\]]*\]\(\d+\)\[-\]$`)
 	return re.ReplaceAllString(s, "")
 }
 

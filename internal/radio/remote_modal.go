@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
@@ -12,13 +11,12 @@ const remoteTextWidth = 40
 
 func (a *Application) setupRemoteModal() {
 	a.remoteQR = tview.NewTextView().SetDynamicColors(true)
-	a.remoteQR.SetBackgroundColor(tcell.ColorDefault)
+	a.remoteQR.SetBackgroundColor(colorBg)
 
 	a.remoteText = tview.NewTextView().SetDynamicColors(true).SetWordWrap(true)
-	a.remoteText.SetBackgroundColor(tcell.ColorDefault)
+	a.remoteText.SetBackgroundColor(colorBg)
 
-	a.remoteModal = tview.NewFlex().SetDirection(tview.FlexRow)
-	a.remoteModal.SetBackgroundColor(tcell.ColorDefault)
+	a.remoteModal = tview.NewFlex()
 
 	a.pages.AddPage(a.pageNames[RemotePage], a.remoteModal, true, false)
 }
@@ -37,7 +35,7 @@ func (a *Application) showRemoteModal() {
 
 	r, err := a.startRemote()
 	if err != nil {
-		text = fmt.Sprintf("[red]Could not start the remote control server:[-]\n\n%s", err)
+		text = fmt.Sprintf("%sCould not start the remote control server:[-]\n\n%s", fgTag(colorDanger), err)
 	} else {
 		var qrErr error
 		qr, qrWidth, qrHeight, qrErr = qrText(r.URL())
@@ -46,17 +44,17 @@ func (a *Application) showRemoteModal() {
 		}
 
 		var sb strings.Builder
-		sb.WriteString("[green::b]Control goradion from your phone[-::-]\n\n")
+		sb.WriteString(boldTag(colorAccent) + "Control goradion from your phone[-::-]\n\n")
 		sb.WriteString("Scan the QR code with the phone camera, or open\n\n")
-		sb.WriteString(fmt.Sprintf("  [yellow]%s[-]\n\n", r.Address()))
+		sb.WriteString(fmt.Sprintf("  %s%s[-]\n\n", fgTag(colorWarn), r.Address()))
 		if r.Key() == "" {
-			sb.WriteString("[red]No access code is set:[-] anyone on the network can control goradion.\n\n")
+			sb.WriteString(fgTag(colorDanger) + "No access code is set:[-] anyone on the network can control goradion.\n\n")
 		} else {
 			sb.WriteString("and enter the code\n\n")
-			sb.WriteString(fmt.Sprintf("  [yellow::b]%s[-::-]\n\n", tview.Escape(r.Key())))
+			sb.WriteString(fmt.Sprintf("  %s%s[-::-]\n\n", boldTag(colorWarn), tview.Escape(r.Key())))
 		}
 		sb.WriteString("The phone must be on the same network.\n\n")
-		sb.WriteString("[gray]Esc closes this window.[-]")
+		sb.WriteString(fgTag(colorDim) + "Esc closes this window.[-]")
 		text = sb.String()
 	}
 
@@ -72,7 +70,7 @@ func (a *Application) showRemoteModal() {
 	content.AddItem(a.remoteText, 0, 1, true).AddItem(tview.NewBox(), 1, 0, false)
 	content.SetBorder(true).
 		SetTitle(" Remote control ").SetTitleAlign(tview.AlignLeft).SetTitleColor(colorAccent).
-		SetBackgroundColor(tcell.ColorDefault)
+		SetBackgroundColor(colorBg)
 
 	height := max(qrHeight, 12) + 2
 	width := qrWidth + 2 + remoteTextWidth + 4
@@ -80,13 +78,7 @@ func (a *Application) showRemoteModal() {
 		width = remoteTextWidth + 4
 	}
 
-	a.remoteModal.Clear().
-		AddItem(nil, 0, 1, false).
-		AddItem(tview.NewFlex().SetDirection(tview.FlexColumn).
-			AddItem(nil, 0, 1, false).
-			AddItem(content, width, 0, true).
-			AddItem(nil, 0, 1, false), height, 0, true).
-		AddItem(nil, 0, 1, false)
+	centerIn(a.remoteModal, content, width, height)
 
 	a.pages.ShowPage(a.pageNames[RemotePage])
 	a.app.SetFocus(a.remoteText)

@@ -6,33 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 )
 
-// Palette colours and default backgrounds let the terminal's theme show through.
-const (
-	colorAccent       = tcell.ColorGreen
-	colorAccentBright = tcell.ColorLime
-	colorWarn         = tcell.ColorYellow
-	colorDanger       = tcell.ColorRed
-	colorDim          = tcell.ColorGray
-	colorText         = tcell.ColorDefault
-)
-
-var (
-	styleText              = tcell.StyleDefault.Foreground(colorText).Background(tcell.ColorDefault)
-	styleDim               = styleText.Foreground(colorDim)
-	styleAccent            = styleText.Foreground(colorAccent)
-	styleKey               = styleText.Bold(true)
-	styleSelected          = tcell.StyleDefault.Foreground(tcell.ColorBlack).Background(colorAccent).Bold(true)
-	styleSelectedUnfocused = styleText.Foreground(colorAccent).Bold(true)
-)
-
 type glyphSet struct {
-	play, stop, fail, song, notes, back, dot, shuffle, star string
-	left, right, up, down                                   string
-	ellipsis                                                string
+	play, stop, fail, song, notes, back, dot, shuffle, star, check, swatch string
+	left, right, up, down                                                  string
+	ellipsis                                                               string
 
 	spinner []string
 
@@ -44,7 +24,7 @@ type glyphSet struct {
 }
 
 var unicodeGlyphs = glyphSet{
-	play: "▶", stop: "■", fail: "!", song: "♪", notes: "♫", back: "‹", dot: "·", shuffle: "🔀", star: "★",
+	play: "▶", stop: "■", fail: "!", song: "♪", notes: "♫", back: "‹", dot: "·", shuffle: "🔀", star: "★", check: "✓", swatch: "██",
 	left: "←", right: "→", up: "↑", down: "↓",
 	ellipsis:  "…",
 	spinner:   []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
@@ -55,7 +35,7 @@ var unicodeGlyphs = glyphSet{
 }
 
 var asciiGlyphs = glyphSet{
-	play: ">", stop: "#", fail: "!", song: "~", notes: "*", back: "<", dot: "-", shuffle: "", star: "*",
+	play: ">", stop: "#", fail: "!", song: "~", notes: "*", back: "<", dot: "-", shuffle: "", star: "*", check: "*", swatch: "##",
 	left: "<-", right: "->", up: "^", down: "v",
 	ellipsis:  "~",
 	spinner:   []string{"|", "/", "-", "\\"},
@@ -67,7 +47,7 @@ var asciiGlyphs = glyphSet{
 
 var glyphs = unicodeGlyphs
 
-func applyTheme(ascii bool) {
+func applyGlyphs(ascii bool) {
 	if ascii {
 		glyphs = asciiGlyphs
 	} else {
@@ -86,15 +66,6 @@ func applyTheme(ascii bool) {
 	b.HorizontalFocus, b.VerticalFocus = b.Horizontal, b.Vertical
 	b.TopLeftFocus, b.TopRightFocus = b.TopLeft, b.TopRight
 	b.BottomLeftFocus, b.BottomRightFocus = b.BottomLeft, b.BottomRight
-
-	s := &tview.Styles
-	s.PrimitiveBackgroundColor = tcell.ColorDefault
-	s.ContrastBackgroundColor = tcell.ColorDefault
-	s.MoreContrastBackgroundColor = tcell.ColorDefault
-	s.BorderColor = colorDim
-	s.TitleColor = colorText
-	s.GraphicsColor = colorDim
-	s.PrimaryTextColor = colorText
 }
 
 // detectASCII follows tcell's charset rules: where tcell falls back to ASCII,

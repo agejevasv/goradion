@@ -54,6 +54,8 @@ func (a *Application) currentHints() []hint {
 		return []hint{{"enter", "show all"}, {glyphs.down, "results"}, {"^F", "search online"}, {"esc", "close"}}
 	case a.pageNames[RemotePage]:
 		return []hint{{"esc", "close"}}
+	case a.pageNames[ThemePage]:
+		return []hint{{glyphs.up + " " + glyphs.down, "preview"}, {"enter", "apply"}, {"esc", "cancel"}}
 	case a.pageNames[Help]:
 		return []hint{{"esc", "back"}, {glyphs.up + " " + glyphs.down, "scroll"}}
 	case a.pageNames[Main]:
@@ -63,12 +65,12 @@ func (a *Application) currentHints() []hint {
 		} else {
 			hints = append(hints, hint{"esc", "tags"})
 		}
-		return append(hints, hint{"?", "help"}, hint{"^P", "phone"})
+		return append(hints, hint{"?", "help"}, hint{"^T", "theme"}, hint{"^P", "phone"})
 	default:
 		hints := []hint{{"a-z", "open"}, {"~", "all"}, {arrows, "volume"}, {"^F", "search"}, {"^R", "shuffle"}}
 		if a.wide {
 			hints = append(hints, hint{"tab", "stations"})
 		}
-		return append(hints, hint{"?", "help"}, hint{"esc", "quit"}, hint{"^P", "phone"})
+		return append(hints, hint{"?", "help"}, hint{"esc", "quit"}, hint{"^T", "theme"}, hint{"^P", "phone"})
 	}
 }

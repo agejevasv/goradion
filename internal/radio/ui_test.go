@@ -12,7 +12,7 @@ import (
 )
 
 func TestMarquee(t *testing.T) {
-	applyTheme(false)
+	applyGlyphs(false)
 	text := "abcdefghij"
 	for _, tc := range []struct {
 		width   int
@@ -35,7 +35,7 @@ func TestMarquee(t *testing.T) {
 }
 
 func TestGaugeAndFit(t *testing.T) {
-	applyTheme(false)
+	applyGlyphs(false)
 	if got := segsText(gauge(10, 0.55, styleText, styleDim)); got != "━━━━━╸────" {
 		t.Errorf("gauge = %q", got)
 	}
@@ -50,8 +50,8 @@ func TestGaugeAndFit(t *testing.T) {
 		t.Errorf("fit = %q", got)
 	}
 
-	applyTheme(true)
-	defer applyTheme(false)
+	applyGlyphs(true)
+	defer applyGlyphs(false)
 	if got := segsText(gauge(10, 0.55, styleText, styleDim)); got != "======----" {
 		t.Errorf("ascii gauge = %q", got)
 	}
@@ -342,8 +342,8 @@ func (f fakeMeter) Level() (float64, time.Time, bool)               { return f.l
 func (f fakeMeter) Spectrum() ([bandCount]float64, time.Time, bool) { return f.bands, f.at, f.bandsOK }
 
 func TestSpectrumCard(t *testing.T) {
-	applyTheme(false)
-	defer applyTheme(false)
+	applyGlyphs(false)
+	defer applyGlyphs(false)
 	now := time.Now()
 	n := newNowPlaying(nil)
 	n.update(Info{Station: "Radio", Url: "http://radio", Song: "A", Volume: 50, Bitrate: 128}, now)
@@ -363,11 +363,11 @@ func TestSpectrumCard(t *testing.T) {
 	if row := segsText(n.render(now, 76).rows[0]); !strings.HasSuffix(row, "▁▁▁▂▃▄▅▆▆▇██  128 kb/s") {
 		t.Errorf("first row = %q", row)
 	}
-	applyTheme(true)
+	applyGlyphs(true)
 	if got := segsText(n.meter()); got != "....::|||###" {
 		t.Errorf("ascii spectrum = %q", got)
 	}
-	applyTheme(false)
+	applyGlyphs(false)
 
 	// Bars fall slowly when the music gets quieter.
 	later := now.Add(100 * time.Millisecond)
@@ -394,7 +394,7 @@ func TestSpectrumCard(t *testing.T) {
 }
 
 func TestEarlierHint(t *testing.T) {
-	applyTheme(false)
+	applyGlyphs(false)
 	now := time.Now()
 	n := newNowPlaying(nil)
 	n.update(Info{Station: "Radio", Url: "http://radio", Song: "B", Volume: 50,
@@ -467,6 +467,27 @@ func TestScreenLayouts(t *testing.T) {
 	screen.InjectKey(tcell.KeyEscape, 0, tcell.ModNone)
 	waitFor(t, "esc to tags", func() bool {
 		return onUI(a, a.frontPage) == a.pageNames[Tags] && strings.Contains(screenText(screen), " Tags ")
+	})
+}
+
+// On the tags page of the wide layout the stations are visible, and a click
+// on one must play it although the stations page has not been drawn yet.
+func TestClickStationFromTagsPage(t *testing.T) {
+	a, screen := newTestApp(t)
+	resize(a, screen, 120, 40)
+	waitFor(t, "wide layout", func() bool { return onUI(a, func() bool { return a.wide }) })
+	screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone)
+	waitFor(t, "preview all stations", func() bool {
+		return onUI(a, func() bool { return a.tag == allStationsTag && a.frontPage() == a.pageNames[Tags] })
+	})
+
+	pos := onUI(a, func() [2]int { x, y, _, _ := a.stationsList.GetInnerRect(); return [2]int{x + 5, y + 3} })
+	screen.InjectMouse(pos[0], pos[1], tcell.Button1, tcell.ModNone)
+	screen.InjectMouse(pos[0], pos[1], tcell.ButtonNone, tcell.ModNone)
+	waitFor(t, "station clicked", func() bool {
+		return onUI(a, func() bool {
+			return a.frontPage() == a.pageNames[Main] && a.stationsList.GetCurrentItem() == 3
+		})
 	})
 }
 

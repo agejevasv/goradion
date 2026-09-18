@@ -1,0 +1,11 @@
+[
+  {"keys": "~b", "wait": 3.0},
+  {"keys": "<c-t>", "wait": 0.6, "shot": "theme-01-panel.png"},
+  {"keys": "<down>", "wait": 0.6, "shot": "theme-02-monokai.png"},
+  {"keys": "<down><down>", "wait": 0.6, "shot": "theme-03-tokyo-night.png"},
+  {"keys": "<enter>", "wait": 0.6, "shot": "theme-04-saved.png"},
+  {"keys": "<c-f>jazz", "wait": 0.6, "shot": "theme-05-search.png"},
+  {"keys": "<esc>?", "wait": 0.6, "shot": "theme-06-help.png"},
+  {"keys": "<esc><c-t>", "wait": 0.3},
+  {"keys": "<pgdn>", "wait": 0.6, "shot": "theme-07-light.png"}
+]

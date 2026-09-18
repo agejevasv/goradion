@@ -249,7 +249,7 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 func (n *nowPlaying) gauges(now time.Time, width int, f *cardFrame) []seg {
 	fill, pct := styleAccent, styleText
 	if now.Before(n.flashUntil) {
-		bright := styleText.Foreground(colorAccentBright).Bold(true)
+		bright := styleText.Foreground(colorBright).Bold(true)
 		fill, pct = bright, bright
 	}
 

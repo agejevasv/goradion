@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"time"
@@ -15,21 +14,7 @@ const minPlays = 1
 const maxFavs = int('z' - 'a' + 1)
 
 func getFavoritesFile() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
-
-	var configDir string
-	if runtime.GOOS == "windows" {
-		configDir = filepath.Join(home, "AppData", "Roaming", "goradion")
-	} else if runtime.GOOS == "darwin" {
-		configDir = filepath.Join(home, "Library", "Application Support", "goradion")
-	} else {
-		configDir = filepath.Join(home, ".config", "goradion")
-	}
-
-	return filepath.Join(configDir, "favorites.json")
+	return filepath.Join(configDir(), "favorites.json")
 }
 
 type FavoriteStation struct {
@@ -72,15 +57,11 @@ func NewFavorites(stations []Station) *Favorites {
 }
 
 func (f *Favorites) save() error {
-	favFile := getFavoritesFile()
-	os.MkdirAll(filepath.Dir(favFile), 0755)
-
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	return os.WriteFile(favFile, data, 0644)
+	return writeFile(getFavoritesFile(), data)
 }
 
 func (f *Favorites) track(station Station) {
@@ -150,7 +131,7 @@ func (f *Favorites) getFavoriteStations() []Station {
 		}
 
 		stations = append(stations, Station{
-			title: fmt.Sprintf("%s [gray](%d)[-]", title, fav.PlayCount),
+			title: fmt.Sprintf("%s %s(%d)[-]", title, fgTag(colorDim), fav.PlayCount),
 			url:   fav.URL,
 			tags:  []string{favoritesTag},
 		})
