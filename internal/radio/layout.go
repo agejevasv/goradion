@@ -24,6 +24,28 @@ func newListPane(list *tview.List) *listPane {
 	return &listPane{List: list}
 }
 
+func (p *listPane) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+	return wheelList{p.List}.MouseHandler()
+}
+
+// wheelList keeps the wheel scrolling past the cursor. A list draws with its
+// cursor in view, so the cursor is dragged along at the edges.
+type wheelList struct{ *tview.List }
+
+func (l wheelList) MouseHandler() func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+	handle := l.List.MouseHandler()
+	return func(action tview.MouseAction, event *tcell.EventMouse, setFocus func(p tview.Primitive)) (bool, tview.Primitive) {
+		consumed, capture := handle(action, event, setFocus)
+		if consumed && (action == tview.MouseScrollUp || action == tview.MouseScrollDown) {
+			offset, _ := l.GetOffset()
+			_, _, _, height := l.GetInnerRect()
+			current := l.GetCurrentItem()
+			l.SetCurrentItem(min(max(current, offset), offset+height-1))
+		}
+		return consumed, capture
+	}
+}
+
 func (p *listPane) Draw(screen tcell.Screen) {
 	if p.HasFocus() {
 		p.SetBorderStyle(styleText)

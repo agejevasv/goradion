@@ -59,18 +59,18 @@ func (a *Application) currentHints() []hint {
 	case a.pageNames[Help]:
 		return []hint{{"esc", "back"}, {glyphs.up + " " + glyphs.down, "scroll"}}
 	case a.pageNames[Main]:
-		hints := []hint{{"a-z", "play"}, {"*", "random"}, {arrows, "volume"}, {"^R", "shuffle"}, {"^F", "search"}}
+		tags := hint{"esc", "tags"}
 		if a.wide {
-			hints = append(hints, hint{"tab", "tags"})
-		} else {
-			hints = append(hints, hint{"esc", "tags"})
+			tags = hint{"tab", "tags"}
 		}
-		return append(hints, hint{"?", "help"}, hint{"^T", "theme"}, hint{"^P", "phone"})
+		return []hint{{"a-z", "play"}, {"*", "random"}, {arrows, "volume"}, tags,
+			{"^R", "shuffle"}, {"^F", "search"}, {"^T", "theme"}, {"^P", "phone"}, {"?", "help"}}
 	default:
-		hints := []hint{{"a-z", "open"}, {"~", "all"}, {arrows, "volume"}, {"^F", "search"}, {"^R", "shuffle"}}
+		hints := []hint{{"a-z", "open"}, {"~", "all"}, {arrows, "volume"}}
 		if a.wide {
 			hints = append(hints, hint{"tab", "stations"})
 		}
-		return append(hints, hint{"?", "help"}, hint{"esc", "quit"}, hint{"^T", "theme"}, hint{"^P", "phone"})
+		return append(hints, hint{"^R", "shuffle"}, hint{"^F", "search"}, hint{"^T", "theme"},
+			hint{"^P", "phone"}, hint{"esc", "quit"}, hint{"?", "help"})
 	}
 }

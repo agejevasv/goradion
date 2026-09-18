@@ -70,7 +70,7 @@ func (a *Application) setupSearchModal() {
 
 	a.searchContent = tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(a.searchInput, 1, 0, true).
-		AddItem(a.searchResults, 0, 1, false)
+		AddItem(wheelList{a.searchResults}, 0, 1, false)
 
 	// Pad the children, not the frame: a Flex does not clear its background.
 	a.searchInput.SetBorderPadding(0, 0, 1, 1)

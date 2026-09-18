@@ -33,7 +33,7 @@ func (a *Application) setupThemeModal() {
 	})
 
 	width := 4 + 2 + themeNameWidth + 2 + 4*2 + 4 // shortcut, mark, name, gap, swatches, frame
-	modal := centerIn(tview.NewFlex(), a.themeList, width, len(themes)+2)
+	modal := centerIn(tview.NewFlex(), wheelList{a.themeList}, width, len(themes)+2)
 	a.pages.AddPage(a.pageNames[ThemePage], modal, true, false)
 }
 

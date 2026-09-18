@@ -491,6 +491,28 @@ func TestClickStationFromTagsPage(t *testing.T) {
 	})
 }
 
+// A list draws with its cursor in view, which used to stop the wheel once the
+// cursor reached the edge.
+func TestWheelScrollsPastCursor(t *testing.T) {
+	a, screen := newTestApp(t)
+	resize(a, screen, 120, 40)
+	a.app.QueueUpdateDraw(func() { a.openTag(allStationsTag) })
+	pos := onUI(a, func() [2]int { x, y, _, _ := a.stationsList.GetInnerRect(); return [2]int{x + 5, y + 3} })
+	offset := func() int { return onUI(a, func() int { o, _ := a.stationsList.GetOffset(); return o }) }
+	scroll := func(wheel tcell.ButtonMask, want int) {
+		for i := 0; offset() != want; i++ {
+			if i == 200 {
+				t.Fatalf("offset %d, want %d", offset(), want)
+			}
+			screen.InjectMouse(pos[0], pos[1], wheel, tcell.ModNone)
+			screen.InjectMouse(pos[0], pos[1], tcell.ButtonNone, tcell.ModNone)
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	scroll(tcell.WheelDown, 60)
+	scroll(tcell.WheelUp, 0)
+}
+
 func segsText(segs []seg) string {
 	var sb strings.Builder
 	for _, s := range segs {
