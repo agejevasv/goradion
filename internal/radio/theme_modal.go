@@ -12,7 +12,7 @@ import (
 // The theme modal previews the theme under the cursor on the whole UI. Enter
 // saves it, Esc goes back to the saved one.
 
-const themeNameWidth = 16
+const themeNameWidth = 20
 
 func (a *Application) setupThemeModal() {
 	a.themeList = newList()

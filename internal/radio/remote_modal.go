@@ -70,7 +70,7 @@ func (a *Application) showRemoteModal() {
 	}
 	content.AddItem(a.remoteText, 0, 1, true).AddItem(tview.NewBox(), 1, 0, false)
 	content.SetBorder(true).
-		SetTitle(" Remote control ").SetTitleAlign(tview.AlignLeft).SetTitleColor(colorAccent).
+		SetTitle(" Remote control ").SetTitleAlign(tview.AlignLeft).SetTitleColor(colorText).
 		SetBackgroundColor(colorBg)
 
 	height := max(qrHeight, 12) + 2

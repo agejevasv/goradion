@@ -180,7 +180,7 @@ func (a *Application) setupPages() {
 	a.helpView = tview.NewTextView().SetDynamicColors(true).SetScrollable(true).SetWordWrap(true)
 	a.helpView.SetText(helpText())
 	a.helpView.SetBorder(true).SetBorderPadding(0, 0, 1, 1).
-		SetTitle(" Help ").SetTitleAlign(tview.AlignLeft).SetTitleColor(colorAccent)
+		SetTitle(" Help ").SetTitleAlign(tview.AlignLeft).SetTitleColor(colorText)
 
 	a.tagsFlex, a.mainFlex, a.helpFlex = tview.NewFlex(), tview.NewFlex(), tview.NewFlex()
 	a.buildLayout(false)
