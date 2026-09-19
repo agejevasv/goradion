@@ -1,5 +1,5 @@
 [
-  {"keys": "~b", "wait": 3.0},
+  {"keys": "ab", "wait": 3.0},
   {"keys": "<c-t>", "wait": 0.6, "shot": "theme-01-panel.png"},
   {"keys": "<down>", "wait": 0.6, "shot": "theme-02-monokai.png"},
   {"keys": "<down><down>", "wait": 0.6, "shot": "theme-03-tokyo-night.png"},

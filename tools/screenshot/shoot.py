@@ -77,19 +77,23 @@ def color(name, default, bold=False):
     return default
 
 
-def render(screen, fonts, path):
+# The background set with OSC 11, as goradion's themes do; pyte ignores it.
+OSC_BG = re.compile(rb"\x1b\](11;(#[0-9a-fA-F]{6})|111)(\x1b\\|\x07)")
+
+
+def render(screen, fonts, path, term_bg=BG):
     cols, rows = screen.columns, screen.lines
-    img = Image.new("RGB", (cols * CW + 2 * PAD, rows * CH + 2 * PAD), BG)
+    img = Image.new("RGB", (cols * CW + 2 * PAD, rows * CH + 2 * PAD), term_bg)
     draw = ImageDraw.Draw(img)
     for y in range(rows):
         line = screen.buffer[y]
         for x in range(cols):
             ch = line[x]
-            fg, bg = color(ch.fg, FG), color(ch.bg, BG)
+            fg, bg = color(ch.fg, FG), color(ch.bg, term_bg)
             if ch.reverse:
                 fg, bg = bg, fg
             px, py = PAD + x * CW, PAD + y * CH
-            if bg != BG:
+            if bg != term_bg:
                 draw.rectangle([px, py, px + CW - 1, py + CH - 1], fill=bg)
             if ch.data and ch.data.strip():
                 if 0x2500 <= ord(ch.data[0]) <= 0x259F:
@@ -176,15 +180,22 @@ def main():
         screen.resize(rows, cols)
         os.kill(pid, signal.SIGWINCH)
 
+    term = {"bg": BG, "tail": b""}
+
     def pump(seconds):
         end = time.time() + seconds
         while time.time() < end:
             ready, _, _ = select.select([fd], [], [], 0.02)
             if ready:
                 try:
-                    stream.feed(os.read(fd, 1 << 16))
+                    data = os.read(fd, 1 << 16)
                 except OSError:
                     return
+                # Keep a tail, as a sequence may be split between reads.
+                for m in OSC_BG.finditer(term["tail"] + data):
+                    term["bg"] = m.group(2).decode() if m.group(2) else BG
+                term["tail"] = data[-32:]
+                stream.feed(data)
 
     set_size(opts.cols, opts.rows)
     pump(1.5)
@@ -205,7 +216,7 @@ def main():
         pump(step.get("wait", 0.6))
         if "shot" in step:
             path = os.path.join(opts.out, step["shot"])
-            render(screen, fonts, path)
+            render(screen, fonts, path, term["bg"])
             print("saved", path)
     # The child leads its own session, so this also stops the mpv it started.
     for sig in (signal.SIGTERM, signal.SIGKILL):
