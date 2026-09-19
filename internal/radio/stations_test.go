@@ -101,7 +101,7 @@ func TestStationLabel(t *testing.T) {
 	if got := stationLabel(Station{title: "Radio [live]"}, false); got != "Radio [live[]" {
 		t.Errorf("label = %q, want tview tags escaped", got)
 	}
-	if got := stationLabel(Station{title: "Radio"}, true); got != "Radio [#88C0D0]"+glyphs.star+"[-]" {
+	if got := stationLabel(Station{title: "Radio"}, true); got != "Radio [#616E88]"+glyphs.star+"[-]" {
 		t.Errorf("bookmarked label = %q", got)
 	}
 }

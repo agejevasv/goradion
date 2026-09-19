@@ -187,7 +187,7 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 		left = []seg{{glyphs.play + " ", styleAccent}, {station, strong}}
 	}
 	if n.bookmarked != nil && n.bookmarked(inf.URL) && st != mpv.Idle && st != mpv.Stopped {
-		left = append(left, seg{" " + glyphs.star, styleAccent})
+		left = append(left, seg{" " + glyphs.star, styleDim})
 	}
 	// The dot glows only while there is sound.
 	dot := styleDim

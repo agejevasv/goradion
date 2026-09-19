@@ -183,7 +183,7 @@ func (a *Application) showStations(stations []Station) {
 func stationLabel(s Station, bookmarked bool) string {
 	label := tview.Escape(s.title)
 	if bookmarked {
-		label += " " + fgTag(colorAccent) + glyphs.star + "[-]"
+		label += " " + fgTag(colorDim) + glyphs.star + "[-]"
 	}
 	return label
 }
