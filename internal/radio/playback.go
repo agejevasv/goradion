@@ -6,12 +6,9 @@ import "math/rand"
 func (a *Application) togglePlay(station Station) {
 	starting := station.url != "" && station.url != a.player.URL()
 	if starting {
-		a.favorites.track(station)
+		a.playing = station
 	}
 	a.player.Toggle(station.title, station.url)
-	if starting && a.tag == favoritesTag {
-		a.showStations(a.favorites.list())
-	}
 }
 
 // togglePlayManual is togglePlay for a station the user picked, which ends

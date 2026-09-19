@@ -118,6 +118,7 @@ func (r *Remote) handler() http.Handler {
 	mux.HandleFunc("POST /api/tags", r.auth(r.action(a.remoteShowTags)))
 	mux.HandleFunc("POST /api/tag", r.auth(r.action(a.remoteOpenTag)))
 	mux.HandleFunc("POST /api/play", r.auth(r.action(a.remotePlay)))
+	mux.HandleFunc("POST /api/bookmark", r.auth(r.action(a.remoteBookmark)))
 	mux.HandleFunc("POST /api/stop", r.auth(r.action(a.remoteStop)))
 	mux.HandleFunc("POST /api/random", r.auth(r.action(a.remoteRandom)))
 	mux.HandleFunc("POST /api/volume", r.auth(r.action(a.remoteVolume)))

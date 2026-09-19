@@ -51,13 +51,12 @@ func hintSegs(hints []hint, width int) []seg {
 }
 
 func (a *Application) currentHints() []hint {
-	arrows := glyphs.left + " " + glyphs.right
 	switch a.frontPage() {
 	case pageSearch:
 		if a.searchOnline {
-			return []hint{{"enter", "search"}, {glyphs.down, "results"}, {"^F", "search local"}, {"esc", "close"}}
+			return []hint{{"enter", "search"}, {glyphs.down, "results"}, {"^F", "search local"}, {"^B", "bookmark"}, {"esc", "close"}}
 		}
-		return []hint{{"enter", "show all"}, {glyphs.down, "results"}, {"^F", "search online"}, {"esc", "close"}}
+		return []hint{{"enter", "show all"}, {glyphs.down, "results"}, {"^F", "search online"}, {"^B", "bookmark"}, {"esc", "close"}}
 	case pageRemote:
 		return []hint{{"esc", "close"}}
 	case pageTheme:
@@ -65,18 +64,12 @@ func (a *Application) currentHints() []hint {
 	case pageHelp:
 		return []hint{{"esc", "back"}, {glyphs.up + " " + glyphs.down, "scroll"}}
 	case pageMain:
-		tags := hint{"esc", "tags"}
-		if a.wide {
-			tags = hint{"tab", "tags"}
+		hints := []hint{{"^B", "bookmark"}, {"^F", "search"}, {"^R", "shuffle"}, {"^P", "phone"}, {"^T", "theme"}, {"?", "help"}}
+		if !a.wide {
+			hints = append(hints, hint{"esc", "tags"})
 		}
-		return []hint{{"a-z", "play"}, {"*", "random"}, {arrows, "volume"}, tags,
-			{"^R", "shuffle"}, {"^F", "search"}, {"^T", "theme"}, {"^P", "phone"}, {"?", "help"}}
+		return hints
 	default:
-		hints := []hint{{"a-z", "open"}, {"~", "all"}, {arrows, "volume"}}
-		if a.wide {
-			hints = append(hints, hint{"tab", "stations"})
-		}
-		return append(hints, hint{"^R", "shuffle"}, hint{"^F", "search"}, hint{"^T", "theme"},
-			hint{"^P", "phone"}, hint{"esc", "quit"}, hint{"?", "help"})
+		return []hint{{"^F", "search"}, {"^R", "shuffle"}, {"^P", "phone"}, {"^T", "theme"}, {"?", "help"}, {"esc", "quit"}}
 	}
 }

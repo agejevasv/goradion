@@ -24,8 +24,9 @@ const (
 // nowPlaying is only touched on the UI goroutine.
 type nowPlaying struct {
 	*tview.Box
-	player  *mpv.Player
-	shuffle *shuffle
+	player     *mpv.Player
+	shuffle    *shuffle
+	bookmarked func(url string) bool
 
 	info    mpv.Info
 	hasInfo bool
@@ -144,6 +145,9 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 	case mpv.Playing:
 		f.title = []seg{{" Now playing ", styleAccent.Bold(true)}}
 		left = []seg{{glyphs.play + " ", styleAccent}, {station, strong}}
+	}
+	if n.bookmarked != nil && n.bookmarked(inf.URL) && st != mpv.Idle && st != mpv.Stopped {
+		left = append(left, seg{" " + glyphs.star, styleAccent})
 	}
 	// The dot glows only while there is sound.
 	dot := styleDim

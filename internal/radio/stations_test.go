@@ -98,10 +98,10 @@ func TestStationLabel(t *testing.T) {
 	defer useTheme(themes[0])
 	nord, _ := findTheme("nord")
 	useTheme(nord)
-	if got := stationLabel(Station{title: "Radio [live]"}); got != "Radio [live[]" {
+	if got := stationLabel(Station{title: "Radio [live]"}, false); got != "Radio [live[]" {
 		t.Errorf("label = %q, want tview tags escaped", got)
 	}
-	if got := stationLabel(Station{title: "Radio", plays: 12}); got != "Radio [#616E88](12)[-]" {
-		t.Errorf("favourite label = %q", got)
+	if got := stationLabel(Station{title: "Radio"}, true); got != "Radio [#88C0D0]"+glyphs.star+"[-]" {
+		t.Errorf("bookmarked label = %q", got)
 	}
 }

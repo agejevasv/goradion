@@ -17,19 +17,21 @@ type remoteTag struct {
 }
 
 type remoteStation struct {
-	Title   string `json:"title"`
-	URL     string `json:"url"`
-	Meta    string `json:"meta,omitempty"`
-	Playing bool   `json:"playing"`
+	Title      string `json:"title"`
+	URL        string `json:"url"`
+	Meta       string `json:"meta,omitempty"`
+	Playing    bool   `json:"playing"`
+	Bookmarked bool   `json:"bookmarked"`
 }
 
 type remotePlayer struct {
-	Status  string `json:"status"`
-	Station string `json:"station"`
-	Song    string `json:"song"`
-	URL     string `json:"url"`
-	Volume  int    `json:"volume"`
-	Bitrate int    `json:"bitrate"`
+	Status     string `json:"status"`
+	Station    string `json:"station"`
+	Song       string `json:"song"`
+	URL        string `json:"url"`
+	Volume     int    `json:"volume"`
+	Bitrate    int    `json:"bitrate"`
+	Bookmarked bool   `json:"bookmarked"`
 }
 
 type remoteShuffle struct {
@@ -67,12 +69,13 @@ func (a *Application) remoteState() remoteState {
 		Tags:     a.remoteTags(),
 		Stations: []remoteStation{},
 		Player: remotePlayer{
-			Status:  inf.Status,
-			Station: inf.Station,
-			Song:    inf.Song,
-			URL:     inf.URL,
-			Volume:  inf.Volume,
-			Bitrate: inf.Bitrate,
+			Status:     inf.Status,
+			Station:    inf.Station,
+			Song:       inf.Song,
+			URL:        inf.URL,
+			Volume:     inf.Volume,
+			Bitrate:    inf.Bitrate,
+			Bookmarked: a.bookmarks.has(inf.URL),
 		},
 		Shuffle: remoteShuffle{Interval: int(a.shuffle.interval.Minutes())},
 	}
@@ -84,9 +87,10 @@ func (a *Application) remoteState() remoteState {
 		st.Page = "stations"
 		for _, s := range a.listed {
 			st.Stations = append(st.Stations, remoteStation{
-				Title:   s.title,
-				URL:     s.url,
-				Playing: s.url == inf.URL,
+				Title:      s.title,
+				URL:        s.url,
+				Playing:    s.url == inf.URL,
+				Bookmarked: a.bookmarks.has(s.url),
 			})
 		}
 	}
@@ -95,8 +99,8 @@ func (a *Application) remoteState() remoteState {
 
 func (a *Application) remoteTags() []remoteTag {
 	var out []remoteTag
-	if !a.favorites.empty() {
-		out = append(out, remoteTag{Name: favoritesTag, Kind: "favorites"})
+	if !a.bookmarks.empty() {
+		out = append(out, remoteTag{Name: bookmarksTag, Kind: "bookmarks"})
 	}
 	out = append(out, remoteTag{Name: allStationsTag, Kind: "all"})
 	for _, t := range a.tags {
@@ -115,7 +119,7 @@ func (a *Application) remoteShowTags(actionRequest) error {
 }
 
 func (a *Application) remoteOpenTag(q actionRequest) error {
-	if (q.Tag == favoritesTag && a.favorites.empty()) || !a.openTag(q.Tag) {
+	if (q.Tag == bookmarksTag && a.bookmarks.empty()) || !a.openTag(q.Tag) {
 		return fmt.Errorf("tag %q %w", q.Tag, errNotFound)
 	}
 	return nil
@@ -131,6 +135,24 @@ func (a *Application) remotePlay(q actionRequest) error {
 		}
 	}
 	return fmt.Errorf("station %w in the current list", errNotFound)
+}
+
+// remoteBookmark toggles the bookmark of a station of the list currently
+// shown, or of the one playing when no URL is given.
+func (a *Application) remoteBookmark(q actionRequest) error {
+	station, ok := Station{}, false
+	if i := slices.IndexFunc(a.listed, func(s Station) bool { return s.url == q.URL }); q.URL != "" && i >= 0 {
+		station, ok = a.listed[i], true
+	}
+	if playing := a.playing; !ok && playing.url != "" && playing.url == a.player.URL() && (q.URL == "" || q.URL == playing.url) {
+		station, ok = playing, true
+	}
+	if !ok {
+		return fmt.Errorf("station %w", errNotFound)
+	}
+	a.bookmarks.toggle(station)
+	a.reloadStations()
+	return nil
 }
 
 func (a *Application) remoteStop(actionRequest) error {

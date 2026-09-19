@@ -36,7 +36,7 @@ func rowLabelEnd(list *tview.List, index, textX int) int {
 }
 
 func (a *Application) countTags() {
-	a.tagCounts = map[string]int{allStationsTag: len(a.stations)}
+	a.tagCounts = map[string]int{}
 	for _, s := range a.stations {
 		for i, t := range s.tags {
 			if !slices.Contains(s.tags[:i], t) { // a tag repeated in the CSV lists the station once
@@ -59,8 +59,8 @@ func (a *Application) drawTagCounts(screen tcell.Screen) {
 			return
 		}
 		count, ok := a.tagCounts[a.tagRows[i]]
-		if a.tagRows[i] == favoritesTag { // grows as stations are played
-			count, ok = len(a.favorites.list()), true
+		if a.tagRows[i] == bookmarksTag { // changes with Ctrl+B
+			count, ok = len(a.bookmarks.list()), true
 		}
 		if !ok {
 			continue

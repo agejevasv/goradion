@@ -20,7 +20,6 @@ type Station struct {
 	title string
 	url   string
 	tags  []string
-	plays int // set on favourites only
 }
 
 // LoadStations reads the stations CSV from a file or an http(s) URL; an empty

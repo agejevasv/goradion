@@ -63,6 +63,11 @@
   .interval select { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; }
   .now h1 { margin: 12px 0 2px; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .np-title { display: flex; align-items: center; gap: 8px; margin: 12px 0 2px; }
+  .np-title h1 { flex: 1; min-width: 0; margin: 0; }
+  .bm { flex: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; color: var(--muted); }
+  .bm:active { background: var(--press); }
+  .bm.on { color: #fbbf24; }
   .now p { margin: 0; min-height: 22px; color: var(--fg-2); font-size: 15px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .now p.dim { color: var(--muted); }
@@ -114,6 +119,7 @@
   .list li .glyph.star { color: #fbbf24; background: rgba(251, 191, 36, .14); }
   .list li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .list li .meta { font-size: 12px; color: var(--muted); flex: none; }
+  .list li .bm { margin-right: -8px; }
   .list li .chev { color: var(--muted); flex: none; width: 18px; height: 18px; }
   .list li.playing { background: var(--accent-soft); }
   .list li.playing .name { color: var(--accent); font-weight: 600; }
@@ -183,6 +189,7 @@
   <symbol id="i-radio" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="3"/><circle cx="8" cy="15" r="2.5"/><path d="M14 13h4M14 17h4"/><path d="m6 9 11-6"/></symbol>
   <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-star-o" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
 </svg>
 
 <div id="banner" hidden>Reconnecting…</div>
@@ -199,7 +206,10 @@
         <select id="shuffle-min"></select>
       </label>
     </div>
-    <h1 id="np-station">goradion</h1>
+    <div class="np-title">
+      <h1 id="np-station">goradion</h1>
+      <button class="bm" id="btn-bm" aria-label="Bookmark" hidden><svg><use href="#i-star-o"/></svg></button>
+    </div>
     <p id="np-song" class="dim">Pick a station below</p>
 
     <div class="transport">
@@ -356,6 +366,8 @@
     $('np-bitrate').textContent = p.bitrate + ' kb/s';
 
     $('btn-stop').disabled = !live;
+    setStar($('btn-bm'), p.bookmarked);
+    $('btn-bm').hidden = !live;
     if (!volDragging) setVolume(p.volume);
 
     const sh = st.shuffle, b = $('btn-shuffle');
@@ -396,12 +408,13 @@
       if (!st.stations.length) return ul.appendChild(row({name: 'No stations here', empty: true}));
       for (const s of st.stations) ul.appendChild(row({
         name: s.title, playing: s.playing, glyph: s.playing ? eq() : icon('#i-radio'),
+        star: s.bookmarked, onstar: () => post('/api/bookmark', {url: s.url}),
         onclick: () => post('/api/play', {url: s.url})
       }));
     } else {
       for (const t of st.tags) {
         let glyph = '#', cls = '';
-        if (t.kind === 'favorites') { glyph = icon('#i-star'); cls = 'star'; }
+        if (t.kind === 'bookmarks') { glyph = icon('#i-star'); cls = 'star'; }
         else if (t.kind === 'all') glyph = icon('#i-list');
         else if (t.kind === 'search') glyph = icon('#i-search');
         ul.appendChild(row({
@@ -421,6 +434,12 @@
     li.appendChild(g);
     const n = document.createElement('span'); n.className = 'name'; n.textContent = o.name; li.appendChild(n);
     if (o.meta) { const m = document.createElement('span'); m.className = 'meta'; m.textContent = o.meta; li.appendChild(m); }
+    if (o.onstar) {
+      const b = document.createElement('button'); b.className = 'bm'; b.setAttribute('aria-label', 'Bookmark');
+      b.appendChild(icon('')); setStar(b, o.star);
+      b.onclick = e => { e.stopPropagation(); o.onstar(); };
+      li.appendChild(b);
+    }
     if (o.chevron) { const c = icon('#i-chev'); c.classList.add('chev'); li.appendChild(c); }
     li.onclick = o.onclick;
     return li;
@@ -429,6 +448,11 @@
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     const u = document.createElementNS('http://www.w3.org/2000/svg', 'use');
     u.setAttribute('href', ref); s.appendChild(u); return s;
+  }
+  function setStar(b, on) {
+    b.classList.toggle('on', !!on);
+    b.querySelector('use').setAttribute('href', on ? '#i-star' : '#i-star-o');
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
   }
   function eq() { const s = document.createElement('span'); s.className = 'eq'; s.innerHTML = '<i></i><i></i><i></i>'; return s; }
   function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
@@ -447,6 +471,7 @@
   $('btn-shuffle').onclick = () => post('/api/shuffle');
   $('shuffle-min').onchange = e => post('/api/shuffle', {minutes: +e.target.value});
   $('btn-back').onclick = () => post('/api/tags');
+  $('btn-bm').onclick = () => post('/api/bookmark');
   const vol = $('vol');
   vol.addEventListener('input', () => { volDragging = true; setVolume(+vol.value); });
   vol.addEventListener('change', () => { volDragging = false; post('/api/volume', {volume: +vol.value}); });

@@ -15,6 +15,13 @@ type searchResult struct {
 	meta    string
 }
 
+// searchShown is what renderSearchResults last put in the results list.
+type searchShown struct {
+	query   string
+	results []searchResult
+	online  bool
+}
+
 func (a *Application) setupSearchModal() {
 	a.searchInput = tview.NewInputField().
 		SetLabel("Search: ").
@@ -102,7 +109,7 @@ func (a *Application) showSearchModal(online bool) {
 	a.searchGeneration++
 	a.searchInput.SetText("")
 	a.applySearchMode()
-	a.searchResults.Clear()
+	a.clearSearchResults()
 	a.showSearchPlaceholder()
 	a.showModal(pageSearch)
 	a.app.SetFocus(a.searchInput)
@@ -128,7 +135,7 @@ func (a *Application) setSearchMode(online bool) {
 		if text != "" {
 			a.startOnlineSearch(text)
 		} else {
-			a.searchResults.Clear()
+			a.clearSearchResults()
 			a.showSearchPlaceholder()
 		}
 		return
@@ -216,7 +223,7 @@ func (a *Application) startOnlineSearch(query string) {
 	a.searchGeneration++
 	generation := a.searchGeneration
 
-	a.searchResults.Clear()
+	a.clearSearchResults()
 	a.searchResults.AddItem(fgTag(colorWarn)+"Searching...[-]", "", 0, nil)
 
 	go func() {
@@ -228,7 +235,7 @@ func (a *Application) startOnlineSearch(query string) {
 			}
 
 			if err != nil {
-				a.searchResults.Clear()
+				a.clearSearchResults()
 				a.searchResults.AddItem(fmt.Sprintf("%sError: %s[-]", fgTag(colorDanger), tview.Escape(err.Error())), "", 0, nil)
 				return
 			}
@@ -254,7 +261,8 @@ func onlineMeta(r onlineStation) string {
 }
 
 func (a *Application) renderSearchResults(query string, results []searchResult, online bool) {
-	a.searchResults.Clear()
+	a.clearSearchResults()
+	a.searchShown = searchShown{query: query, results: results, online: online}
 
 	if len(results) == 0 {
 		if query != "" {
@@ -269,7 +277,7 @@ func (a *Application) renderSearchResults(query string, results []searchResult, 
 	}
 
 	for i, r := range results {
-		title := tview.Escape(r.station.title)
+		title := stationLabel(r.station, a.bookmarks.has(r.station.url))
 		shortcut := rune(0)
 		if online {
 			shortcut = idxToRune(i)
@@ -283,6 +291,22 @@ func (a *Application) renderSearchResults(query string, results []searchResult, 
 			a.selectSearchResult(query, stations, station, online)
 		})
 	}
+}
+
+func (a *Application) clearSearchResults() {
+	a.searchResults.Clear()
+	a.searchShown = searchShown{}
+}
+
+// rerenderSearchResults shows the results again, keeping the cursor.
+func (a *Application) rerenderSearchResults() {
+	sh := a.searchShown
+	if len(sh.results) == 0 {
+		return
+	}
+	cursor := a.searchResults.GetCurrentItem()
+	a.renderSearchResults(sh.query, sh.results, sh.online)
+	a.searchResults.SetCurrentItem(cursor)
 }
 
 func (a *Application) selectSearchResult(query string, stations []Station, selected Station, online bool) {

@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	favoritesTag   = "Favorites"
+	bookmarksTag   = "Bookmarks"
 	allStationsTag = "All Stations"
 )
 
@@ -34,8 +34,8 @@ func idxToRune(i int) rune {
 	return 0
 }
 
-// showTags fills the tags list: favourites, all stations, the tags of the
-// stations and the last search.
+// showTags fills the tags list: bookmarks, the tags of the stations and the
+// last search. All stations has no row; ~ opens it.
 func (a *Application) showTags() {
 	a.syncingTags = true
 	defer func() { a.syncingTags = false }()
@@ -50,8 +50,7 @@ func (a *Application) showTags() {
 	}
 
 	a.countTags()
-	add(favoritesTag, '$', favoritesTag)
-	add(allStationsTag, '~', allStationsTag)
+	add(bookmarksTag, '$', bookmarksTag)
 	for i, tag := range a.tags {
 		add(tview.Escape(tag), idxToRune(i), tag)
 	}
@@ -79,8 +78,8 @@ func (a *Application) stationsForTag(tag string) []Station {
 		return a.stations
 	case tag == a.lastSearch.query:
 		return a.lastSearch.stations
-	case tag == favoritesTag:
-		return a.favorites.list()
+	case tag == bookmarksTag:
+		return a.bookmarks.list()
 	}
 	var match []Station
 	for _, s := range a.stations {
@@ -93,7 +92,7 @@ func (a *Application) stationsForTag(tag string) []Station {
 
 // loadTag is openTag without switching pages.
 func (a *Application) loadTag(tag string) bool {
-	if tag == "" || (tag != favoritesTag && tag != allStationsTag && tag != a.lastSearch.query &&
+	if tag == "" || (tag != bookmarksTag && tag != allStationsTag && tag != a.lastSearch.query &&
 		!slices.Contains(a.tags, tag)) {
 		return false
 	}
@@ -135,7 +134,7 @@ func (a *Application) showStations(stations []Station) {
 		a.stationRows = append(a.stationRows, "")
 	}
 	for i, s := range stations {
-		list.AddItem("  "+stationLabel(s), "", idxToRune(i), func() { a.togglePlayManual(s) })
+		list.AddItem("  "+stationLabel(s, a.bookmarks.has(s.url)), "", idxToRune(i), func() { a.togglePlayManual(s) })
 		a.stationRows = append(a.stationRows, s.url)
 	}
 
@@ -145,17 +144,17 @@ func (a *Application) showStations(stations []Station) {
 	a.emptyStationsText = ""
 	if len(stations) == 0 {
 		a.emptyStationsText = "No stations"
-		if a.tag == favoritesTag {
-			a.emptyStationsText = "No favourites yet " + glyphs.dot + " stations you play land here"
+		if a.tag == bookmarksTag {
+			a.emptyStationsText = "No bookmarks yet " + glyphs.dot + " press Ctrl+B on a station to add it"
 		}
 	}
 	a.setStationsTitle(len(stations))
 }
 
-func stationLabel(s Station) string {
+func stationLabel(s Station, bookmarked bool) string {
 	label := tview.Escape(s.title)
-	if s.plays > 0 {
-		label += fmt.Sprintf(" %s(%d)[-]", fgTag(colorDim), s.plays)
+	if bookmarked {
+		label += " " + fgTag(colorAccent) + glyphs.star + "[-]"
 	}
 	return label
 }
@@ -165,7 +164,7 @@ func (a *Application) setStationsTitle(count int) {
 	switch a.tag {
 	case "":
 		name = allStationsTag
-	case favoritesTag:
+	case bookmarksTag:
 		icon = glyphs.star
 	}
 	if a.tag != "" && a.tag == a.lastSearch.query && a.lastSearch.online {

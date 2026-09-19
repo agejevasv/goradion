@@ -71,8 +71,8 @@ func TestClickStationFromTagsPage(t *testing.T) {
 	resize(a, screen, 120, 40)
 	waitFor(t, "wide layout", func() bool { return onUI(a, func() bool { return a.wide }) })
 	screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone)
-	waitFor(t, "preview all stations", func() bool {
-		return onUI(a, func() bool { return a.tag == allStationsTag && a.frontPage() == pageTags })
+	waitFor(t, "preview the first tag", func() bool {
+		return onUI(a, func() bool { return a.tag == a.tags[0] && a.frontPage() == pageTags })
 	})
 
 	pos := onUI(a, func() [2]int { x, y, _, _ := a.stationsList.GetInnerRect(); return [2]int{x + 5, y + 3} })

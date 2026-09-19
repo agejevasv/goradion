@@ -31,7 +31,7 @@ type Application struct {
 	player    *mpv.Player
 	stations  []Station // the stations list, never modified
 	tags      []string  // of the stations, sorted
-	favorites *Favorites
+	bookmarks *Bookmarks
 	config    *config
 
 	app         *tview.Application
@@ -56,6 +56,7 @@ type Application struct {
 
 	tag               string    // the tag or search shown, empty for none
 	listed            []Station // the stations in the stations list
+	playing           Station   // the station last started
 	stationsList      *tview.List
 	stationsPane      *listPane
 	stationRows       []string // the station URL of each row, empty for the others
@@ -66,6 +67,7 @@ type Application struct {
 	searchContent    *tview.Flex
 	searchInput      *tview.InputField
 	searchResults    *tview.List
+	searchShown      searchShown // what the results list shows
 	searchOnline     bool
 	searchGeneration int
 	lastSearch       searchView
@@ -97,7 +99,7 @@ func NewApp(player *mpv.Player, stations []Station, remotePort int, options ...O
 		player:     player,
 		stations:   stations,
 		tags:       collectTags(stations),
-		favorites:  NewFavorites(stations),
+		bookmarks:  NewBookmarks(stations),
 		config:     loadConfig(),
 		shuffle:    shuffle{interval: defaultShuffleInterval, fade: shuffleFade},
 		remotePort: remotePort,
@@ -161,6 +163,7 @@ func (a *Application) followPlayer(stop <-chan struct{}) {
 
 func (a *Application) setupPages() {
 	a.card = newNowPlaying(a.player, &a.shuffle)
+	a.card.bookmarked = a.bookmarks.has
 	a.hints = newHintBar(a)
 
 	a.tagsList = newList()

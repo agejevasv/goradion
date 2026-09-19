@@ -200,12 +200,30 @@ func TestRemoteControl(t *testing.T) {
 	}
 
 	_, st = c.do("GET", "/api/state", nil)
-	if st.Tags[0].Kind != "favorites" {
-		t.Fatalf("favorites tag missing: %+v", st.Tags)
+	if st.Tags[0].Kind == "bookmarks" {
+		t.Fatalf("bookmarks tag shown with no bookmarks: %+v", st.Tags)
 	}
-	code, st = c.do("POST", "/api/tag", map[string]any{"tag": favoritesTag})
-	if code != 200 || len(st.Stations) != 1 || st.Stations[0].Title != target.Title || !st.Stations[0].Playing {
-		t.Fatalf("favorites: %d %+v", code, st.Stations)
+	code, st = c.do("POST", "/api/bookmark", nil)
+	if code != 200 || !st.Player.Bookmarked || !st.Stations[1].Bookmarked || st.Stations[0].Bookmarked {
+		t.Fatalf("bookmark playing: %d %+v", code, st.Player)
+	}
+	code, st = c.do("POST", "/api/bookmark", map[string]any{"url": st.Stations[0].URL})
+	if code != 200 || !st.Stations[0].Bookmarked {
+		t.Fatalf("bookmark listed: %d %+v", code, st.Stations)
+	}
+	if code, _ := c.do("POST", "/api/bookmark", map[string]any{"url": "http://nope"}); code != 404 {
+		t.Fatalf("bookmark unknown station: %d", code)
+	}
+	if st.Tags[0].Kind != "bookmarks" {
+		t.Fatalf("bookmarks tag missing: %+v", st.Tags)
+	}
+	code, st = c.do("POST", "/api/tag", map[string]any{"tag": bookmarksTag})
+	if code != 200 || len(st.Stations) != 2 || st.Stations[0].Title != target.Title || !st.Stations[0].Playing {
+		t.Fatalf("bookmarks: %d %+v", code, st.Stations)
+	}
+	code, st = c.do("POST", "/api/bookmark", map[string]any{"url": st.Stations[1].URL})
+	if code != 200 || len(st.Stations) != 1 {
+		t.Fatalf("remove bookmark: %d %+v", code, st.Stations)
 	}
 
 	_, st = c.do("POST", "/api/stop", nil)

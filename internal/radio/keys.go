@@ -60,6 +60,8 @@ func (a *Application) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		a.showThemeModal()
 	case tcell.KeyCtrlP:
 		a.toggleRemoteModal()
+	case tcell.KeyCtrlB:
+		a.toggleBookmark()
 	case tcell.KeyLeft:
 		a.changeVolume(-mpv.VolumeStep)
 	case tcell.KeyRight:

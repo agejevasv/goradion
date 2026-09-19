@@ -17,6 +17,7 @@ func helpText() string {
 			{"a-z A-Z", "play or stop the station with that letter"},
 			{"Enter Space", "play or stop the station under the cursor"},
 			{"*", "play a random station from the list"},
+			{"Ctrl+B", "bookmark the station under the cursor, or the one playing; again to remove"},
 			{arrows, "volume down or up"},
 			{"Ctrl+R", "shuffle: a random station every few minutes"},
 			{"Alt+1 to 9", "shuffle interval in minutes"},
