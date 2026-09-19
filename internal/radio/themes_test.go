@@ -160,3 +160,39 @@ func TestThemeModal(t *testing.T) {
 		t.Fatal("the saved theme should stay after the panel closes")
 	}
 }
+
+// The song line must not read as another shade of the accent.
+func TestThemeSongHue(t *testing.T) {
+	hue := func(c tcell.Color) float64 {
+		r, g, b := c.RGB()
+		h, _, _ := rgbToHSL(float64(r)/255, float64(g)/255, float64(b)/255)
+		return h
+	}
+	for _, th := range themes {
+		if !th.song.IsRGB() || !th.accent.IsRGB() {
+			continue
+		}
+		d := math.Abs(hue(th.song) - hue(th.accent))
+		if d = math.Min(d, 360-d); d < 35 {
+			t.Errorf("%s: song %06X is %.0f° from accent %06X", th.name, th.song.Hex(), d, th.accent.Hex())
+		}
+	}
+}
+
+func rgbToHSL(r, g, b float64) (h, s, l float64) {
+	hi, lo := math.Max(r, math.Max(g, b)), math.Min(r, math.Min(g, b))
+	l = (hi + lo) / 2
+	if hi == lo {
+		return 0, 0, l
+	}
+	d := hi - lo
+	switch hi {
+	case r:
+		h = math.Mod((g-b)/d, 6)
+	case g:
+		h = (b-r)/d + 2
+	default:
+		h = (r-g)/d + 4
+	}
+	return math.Mod(h*60+360, 360), d / (1 - math.Abs(2*l-1)), l
+}

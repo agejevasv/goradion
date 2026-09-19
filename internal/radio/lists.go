@@ -189,13 +189,9 @@ func stationLabel(s Station, bookmarked bool) string {
 }
 
 func (a *Application) setStationsTitle(count int) {
-	name, icon := a.tag.name, glyphs.notes
-	switch {
-	case a.tag.search:
-	case name == "":
+	name, icon := a.tag.name, fgTag(colorSong)+glyphs.notes+"[-]"
+	if name == "" && !a.tag.search {
 		name = allStationsTag
-	case name == bookmarksTag:
-		icon = glyphs.star
 	}
 	if a.tag.search && a.lastSearch.online {
 		name += " (online)"

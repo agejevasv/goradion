@@ -226,12 +226,13 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 		if inf.Song == "" {
 			left = []seg{{glyphs.song + " ", styleDim}, {"No track information", styleDim}}
 		} else {
-			note := seg{glyphs.song + " ", styleAccent}
+			song := styleText.Foreground(colorSong)
+			note := seg{glyphs.song + " ", song}
 			room := width - segsWidth([]seg{note})
 			if rw := segsWidth(right); rw > 0 {
 				room -= rw + 2
 			}
-			left = []seg{note, {marquee(inf.Song, room, now.Sub(n.songSince)), styleText}}
+			left = []seg{note, {marquee(inf.Song, room, now.Sub(n.songSince)), song}}
 		}
 	}
 	f.rows = append(f.rows, spread(left, right, width))
