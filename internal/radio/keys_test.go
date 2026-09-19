@@ -34,8 +34,7 @@ func TestSearchFieldKeys(t *testing.T) {
 
 func TestHelpKeys(t *testing.T) {
 	a, screen := newTestApp(t)
-	screen.InjectKey(tcell.KeyRune, '~', tcell.ModNone)
-	waitFor(t, "all stations", func() bool { return onUI(a, a.frontPage) == pageMain })
+	onUI(a, func() bool { return a.openTag(tagRef{name: "Jazz"}) })
 	screen.InjectKey(tcell.KeyRune, '?', tcell.ModNone)
 	waitFor(t, "help", func() bool { return onUI(a, a.frontPage) == pageHelp })
 	screen.InjectKey(tcell.KeyRune, '?', tcell.ModNone)
@@ -49,8 +48,7 @@ func TestHelpKeys(t *testing.T) {
 // the search results, and again removes it.
 func TestBookmarkKey(t *testing.T) {
 	a, screen := newTestApp(t)
-	screen.InjectKey(tcell.KeyRune, '~', tcell.ModNone)
-	waitFor(t, "all stations", func() bool { return onUI(a, a.frontPage) == pageMain })
+	onUI(a, func() bool { return a.openTag(tagRef{name: "Jazz"}) })
 	onUI(a, func() bool { a.selectListed(2); return true })
 	want := onUI(a, func() string { return a.listed[2].url })
 

@@ -82,7 +82,7 @@ func (a *Application) cancelThemeModal() {
 
 func (a *Application) saveTheme(name string) {
 	a.config.Theme = name
-	if err := a.config.save(); err != nil {
+	if err := a.config.save("theme"); err != nil {
 		logging.Printf("config: %v", err)
 	}
 	a.hideThemeModal()

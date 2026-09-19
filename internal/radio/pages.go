@@ -44,6 +44,7 @@ func (a *Application) show(p page) {
 	}
 
 	a.pages.SwitchToPage(string(p))
+	a.syncBookmarksRow()
 
 	if a.wide && p == pageTags && a.tag.name == "" {
 		a.previewTagAtCursor()

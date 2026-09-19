@@ -62,6 +62,8 @@ func (a *Application) handleKey(event *tcell.EventKey) *tcell.EventKey {
 		a.toggleRemoteModal()
 	case tcell.KeyCtrlB:
 		a.toggleBookmark()
+	case tcell.KeyCtrlZ:
+		a.cycleSleep()
 	case tcell.KeyLeft:
 		a.changeVolume(-mpv.VolumeStep)
 	case tcell.KeyRight:
@@ -91,8 +93,6 @@ func (a *Application) handleRune(event *tcell.EventKey) *tcell.EventKey {
 		if !a.closeHelp() {
 			a.show(pageHelp)
 		}
-	case '~':
-		a.openTag(tagRef{name: allStationsTag})
 	case ':':
 		a.showSearchModal(false)
 	default:

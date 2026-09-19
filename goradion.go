@@ -14,8 +14,8 @@ import (
 var cfg = flag.String("s", "", "A link or a path to a stations.csv file")
 var ver = flag.Bool("v", false, "Show the version number and quit")
 var dbg = flag.Bool("d", false, "Enable debug log (goradion.log file in a current dir)")
-var chk = flag.Bool("c", false, "")
-var port = flag.Int("p", 7373, "Preferred port for the remote control web server (Ctrl+P)")
+var chk = flag.Bool("c", false, "Check all streams")
+var port = flag.Int("p", radio.DefaultRemotePort, "Preferred port for the remote control web server (Ctrl+P)")
 var ascii = flag.Bool("ascii", false, "Draw plain ASCII symbols, for terminals without Unicode fonts")
 var noVU = flag.Bool("no-vu", false, "Hide the audio meter")
 var remote remoteFlag
@@ -66,8 +66,13 @@ func main() {
 	if remote.on {
 		options = append(options, radio.WithRemote(remote.key))
 	}
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "p" {
+			options = append(options, radio.WithRemotePort(*port))
+		}
+	})
 
-	if err := radio.NewApp(player, stations, *port, options...).Run(); err != nil {
+	if err := radio.NewApp(player, stations, options...).Run(); err != nil {
 		player.Quit()
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

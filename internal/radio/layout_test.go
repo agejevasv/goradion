@@ -71,7 +71,6 @@ func TestClickStationFromTagsPage(t *testing.T) {
 	a, screen := newTestApp(t)
 	resize(a, screen, 120, 40)
 	waitFor(t, "wide layout", func() bool { return onUI(a, func() bool { return a.wide }) })
-	screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone)
 	waitFor(t, "preview the first tag", func() bool {
 		return onUI(a, func() bool { return a.tag.name == a.tags[0] && a.frontPage() == pageTags })
 	})
@@ -150,5 +149,15 @@ func TestQueueUpdateAfterExit(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("update blocked after exit")
+	}
+}
+
+func TestTagsPaneGrows(t *testing.T) {
+	a, screen := newTestApp(t)
+	for width, want := range map[int]int{100: 26, 120: 30, 160: 40, 250: 40} {
+		resize(a, screen, width, 30)
+		waitFor(t, "tags pane width", func() bool {
+			return onUI(a, func() int { _, _, w, _ := a.tagsPane.GetRect(); return w }) == want
+		})
 	}
 }

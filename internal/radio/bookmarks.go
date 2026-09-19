@@ -104,6 +104,7 @@ func (a *Application) toggleBookmark() {
 	}
 	a.bookmarks.toggle(s)
 	a.reloadStations()
+	a.syncBookmarksRow()
 	if a.isSearchModalOpen() {
 		a.rerenderSearchResults()
 	}

@@ -6,7 +6,9 @@ import "math/rand"
 func (a *Application) togglePlay(station Station) {
 	starting := station.url != "" && station.url != a.player.URL()
 	if starting {
-		a.playing = station
+		a.playing, a.playingTag = station, a.tag
+	} else {
+		a.cancelSleep()
 	}
 	a.player.Toggle(station.title, station.url)
 }
@@ -19,6 +21,7 @@ func (a *Application) togglePlayManual(station Station) {
 }
 
 func (a *Application) stop() {
+	a.cancelSleep()
 	a.stopShuffle()
 	a.player.Stop()
 }

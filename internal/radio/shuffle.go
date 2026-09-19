@@ -2,6 +2,7 @@ package radio
 
 import (
 	"context"
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,8 @@ type shuffle struct {
 	start    time.Time // when the current interval began
 	fade     time.Duration
 	cancel   context.CancelFunc
+	loops    sync.WaitGroup
+	done     chan struct{} // closed when the latest loop returns
 }
 
 func (s *shuffle) remaining(now time.Time) time.Duration {
@@ -57,7 +60,14 @@ func (a *Application) restartShuffle() {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.shuffle.cancel = cancel
 	a.shuffle.start = time.Now()
-	go a.shuffleLoop(ctx, a.shuffle.interval, a.shuffle.fade)
+	done := make(chan struct{})
+	a.shuffle.done = done
+	a.shuffle.loops.Add(1)
+	go func() {
+		defer a.shuffle.loops.Done()
+		defer close(done)
+		a.shuffleLoop(ctx, a.shuffle.interval, a.shuffle.fade)
+	}()
 }
 
 func (a *Application) shuffleLoop(ctx context.Context, interval, fade time.Duration) {

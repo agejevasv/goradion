@@ -86,6 +86,30 @@ goradion -r "my secret code" # a fixed code, handy for a bookmarked phone
 goradion -r ""               # no code
 ```
 
+To start it every time, or to keep the port and code, use the `remote` section of the
+[config](#config).
+
 ## Themes
-Press `Ctrl+T` to pick a colour theme. It is saved in `config.yaml` (`~/.config/goradion`,
-`~/Library/Application Support/goradion` on Mac, `%APPDATA%\goradion` on Windows).
+Press `Ctrl+T` to pick a colour theme. It is saved in the [config](#config).
+
+## Config
+goradion creates `config.yaml` on the first run, in `~/.config/goradion`
+(`~/Library/Application Support/goradion` on Mac, `%APPDATA%\goradion` on Windows):
+
+```yaml
+theme: terminal         # Ctrl+T saves it here
+autoplay: true          # play the last station at launch; false only selects it
+
+volume: 80              # remembered from the last run
+tag: Jazz
+station: https://...
+
+remote:                 # the phone remote, Ctrl+P
+  autostart: false      # start it with goradion, like -r
+  port: 7373            # preferred port, like -p
+  key: my secret code   # a fixed access code; "" for none; leave out for a random one per run
+```
+
+Command-line flags win over the file. goradion writes only `volume`, `tag` and `station`
+when it quits, and `theme` when you pick one with `Ctrl+T`. Everything else, including
+edits made while it runs, is left as you wrote it.

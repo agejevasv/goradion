@@ -42,6 +42,10 @@ func (a *Application) showTags() {
 
 	list := a.tagsList
 	cursor := list.GetCurrentItem()
+	var cursorTag tagRef
+	if cursor >= 0 && cursor < len(a.tagRows) {
+		cursorTag = a.tagRows[cursor]
+	}
 	list.Clear()
 	a.tagRows = a.tagRows[:0]
 	add := func(label string, shortcut rune, tag tagRef) {
@@ -50,7 +54,9 @@ func (a *Application) showTags() {
 	}
 
 	a.countTags()
-	add(bookmarksTag, '$', tagRef{name: bookmarksTag})
+	if a.wantsBookmarksRow() {
+		add(bookmarksTag, '$', tagRef{name: bookmarksTag})
+	}
 	for i, tag := range a.tags {
 		add(tview.Escape(tag), idxToRune(i), tagRef{name: tag})
 	}
@@ -61,7 +67,23 @@ func (a *Application) showTags() {
 		}
 		add(label, '^', tagRef{name: q, search: true})
 	}
+	if i := slices.Index(a.tagRows, cursorTag); i >= 0 {
+		cursor = i
+	}
 	list.SetCurrentItem(cursor)
+}
+
+// wantsBookmarksRow keeps the row while its emptied list is shown, so that it
+// doesn't vanish under the cursor.
+func (a *Application) wantsBookmarksRow() bool {
+	return !a.bookmarks.empty() || a.tag == tagRef{name: bookmarksTag}
+}
+
+func (a *Application) syncBookmarksRow() {
+	shown := len(a.tagRows) > 0 && a.tagRows[0] == tagRef{name: bookmarksTag}
+	if shown != a.wantsBookmarksRow() {
+		a.refreshTags()
+	}
 }
 
 func (a *Application) refreshTags() {
@@ -97,6 +119,7 @@ func (a *Application) loadTag(tag tagRef) bool {
 	}
 	a.tag = tag
 	a.showStations(a.stationsForTag(tag))
+	a.syncBookmarksRow()
 	return true
 }
 

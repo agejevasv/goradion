@@ -10,11 +10,11 @@ import (
 )
 
 type glyphSet struct {
-	play, stop, fail, song, notes, back, dot, shuffle, star, check, swatch string
-	edge                                                                   string // the cursor bar's left edge
-	live                                                                   string // the card's status light
-	left, right, up, down                                                  string
-	ellipsis                                                               string
+	play, stop, fail, song, notes, back, dot, shuffle, star, check, swatch, sleep string
+	edge                                                                          string // the cursor bar's left edge
+	live                                                                          string // the card's status light
+	left, right, up, down                                                         string
+	ellipsis                                                                      string
 
 	spinner []string
 
@@ -26,7 +26,7 @@ type glyphSet struct {
 }
 
 var unicodeGlyphs = glyphSet{
-	play: "▶", stop: "■", fail: "!", song: "♪", notes: "♫", back: "‹", dot: "·", shuffle: "🔀", star: "★", check: "✓", swatch: "██", edge: "▎", live: "•",
+	play: "▶", stop: "■", fail: "!", song: "♪", notes: "♫", back: "‹", dot: "·", shuffle: "🔀", star: "★", check: "✓", swatch: "██", sleep: "☾", edge: "▎", live: "•",
 	left: "←", right: "→", up: "↑", down: "↓",
 	ellipsis:  "…",
 	spinner:   []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"},
@@ -37,7 +37,7 @@ var unicodeGlyphs = glyphSet{
 }
 
 var asciiGlyphs = glyphSet{
-	play: ">", stop: "#", fail: "!", song: "~", notes: "*", back: "<", dot: "-", shuffle: "", star: "*", check: "*", swatch: "##", edge: "", live: "o",
+	play: ">", stop: "#", fail: "!", song: "~", notes: "*", back: "<", dot: "-", shuffle: "", star: "*", check: "*", swatch: "##", sleep: "z", edge: "", live: "o",
 	left: "<-", right: "->", up: "^", down: "v",
 	ellipsis:  "~",
 	spinner:   []string{"|", "/", "-", "\\"},

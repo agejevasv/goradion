@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/agejevasv/goradion/internal/mpv"
 	"github.com/gdamore/tcell/v2"
 )
 
@@ -172,8 +174,11 @@ func TestRemoteControl(t *testing.T) {
 	}
 
 	_, st := c.do("GET", "/api/state", nil)
-	if st.Page != "tags" || len(st.Tags) == 0 || st.Tags[0].Name != allStationsTag {
+	if st.Page != "tags" || len(st.Tags) == 0 || st.Tags[0].Name != a.tags[0] {
 		t.Fatalf("unexpected initial state: %+v", st)
+	}
+	if code, _ := c.do("POST", "/api/tag", map[string]any{"tag": allStationsTag}); code == 200 {
+		t.Fatal("All Stations opened from the phone")
 	}
 
 	code, st := c.do("POST", "/api/tag", map[string]any{"tag": "Jazz"})
@@ -247,7 +252,7 @@ func TestRemoteControl(t *testing.T) {
 		t.Fatalf("empty volume: %d", code)
 	}
 
-	c.do("POST", "/api/tag", map[string]any{"tag": allStationsTag})
+	c.do("POST", "/api/tag", map[string]any{"tag": "Jazz"})
 	_, st = c.do("POST", "/api/random", nil)
 	if st.Player.URL == "" || st.Player.URL == target.URL {
 		t.Fatalf("random: %+v", st.Player)
@@ -344,5 +349,25 @@ func TestLanIPAndToken(t *testing.T) {
 			t.Fatalf("bad token %q", tok)
 		}
 		seen[tok] = true
+	}
+}
+
+func TestRemoteConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	os.MkdirAll(configDir(), 0755)
+	os.WriteFile(configFile(), []byte("remote:\n  autostart: true\n  port: 8123\n  key: secret\n"), 0644)
+	stations, _ := LoadStations("")
+
+	a := NewApp(mpv.New(), stations)
+	if !a.remoteAutostart || a.remotePort != 8123 || a.remoteKey == nil || *a.remoteKey != "secret" {
+		t.Fatalf("from config: %v %d %v", a.remoteAutostart, a.remotePort, a.remoteKey)
+	}
+	a = NewApp(mpv.New(), stations, WithRemote(nil), WithRemotePort(9000))
+	if a.remotePort != 9000 || *a.remoteKey != "secret" {
+		t.Fatalf("-r -p: %d %v", a.remotePort, *a.remoteKey)
+	}
+	none := ""
+	if a = NewApp(mpv.New(), stations, WithRemote(&none)); *a.remoteKey != "" {
+		t.Fatalf("-r \"\": %q", *a.remoteKey)
 	}
 }

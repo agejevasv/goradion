@@ -126,6 +126,7 @@ func (r *Remote) handler() http.Handler {
 	mux.HandleFunc("POST /api/random", r.auth(r.action(a.remoteRandom)))
 	mux.HandleFunc("POST /api/volume", r.auth(r.action(a.remoteVolume)))
 	mux.HandleFunc("POST /api/shuffle", r.auth(r.action(a.remoteShuffle)))
+	mux.HandleFunc("POST /api/sleep", r.auth(r.action(a.remoteSleep)))
 	mux.HandleFunc("POST /api/search/select", r.auth(r.action(r.selectSearch)))
 	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	return mux

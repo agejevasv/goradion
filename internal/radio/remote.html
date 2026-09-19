@@ -72,7 +72,7 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .now p.dim { color: var(--muted); }
 
-  .transport { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+  .transport { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
   .tbtn {
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 66px;
     border-radius: 16px; background: var(--surface-2); color: var(--fg-2); font-size: 13px; font-weight: 600;
@@ -181,11 +181,11 @@
   <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
   <symbol id="i-vol" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
   <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
-  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
   <symbol id="i-radio" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="3"/><circle cx="8" cy="15" r="2.5"/><path d="M14 13h4M14 17h4"/><path d="m6 9 11-6"/></symbol>
   <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></symbol>
   <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="none"/></symbol>
@@ -216,6 +216,7 @@
       <button class="tbtn danger" id="btn-stop"><svg><use href="#i-stop"/></svg><span>Stop</span></button>
       <button class="tbtn" id="btn-random"><svg><use href="#i-dice"/></svg><span>Random</span></button>
       <button class="tbtn" id="btn-shuffle"><svg><use href="#i-shuffle"/></svg><span id="shuffle-label">Shuffle</span></button>
+      <button class="tbtn" id="btn-sleep"><svg><use href="#i-moon"/></svg><span id="sleep-label">Sleep</span></button>
     </div>
 
     <div class="volume">
@@ -374,6 +375,11 @@
     b.classList.toggle('on', sh.active);
     $('shuffle-label').textContent = sh.active ? mmss(sh.remaining) : 'Shuffle';
     $('shuffle-label').className = sh.active ? 'num' : '';
+    const sl = st.sleep;
+    $('btn-sleep').classList.toggle('on', sl.active);
+    $('btn-sleep').disabled = !live && !sl.active;
+    $('sleep-label').textContent = sl.active ? mmss(sl.remaining) : 'Sleep';
+    $('sleep-label').className = sl.active ? 'num' : '';
     const sel = $('shuffle-min');
     if (!sel.options.length) for (let i = 1; i <= 9; i++) sel.add(new Option(i + ' min', i));
     if (+sel.value !== sh.interval) sel.value = sh.interval;
@@ -415,7 +421,6 @@
       for (const t of st.tags) {
         let glyph = '#', cls = '';
         if (t.kind === 'bookmarks') { glyph = icon('#i-star'); cls = 'star'; }
-        else if (t.kind === 'all') glyph = icon('#i-list');
         else if (t.kind === 'search') glyph = icon('#i-search');
         ul.appendChild(row({
           name: t.name, glyph, glyphClass: cls, meta: t.kind === 'search' ? (t.online ? 'online search' : 'search') : '',
@@ -469,6 +474,7 @@
   $('btn-stop').onclick = () => post('/api/stop');
   $('btn-random').onclick = () => post('/api/random');
   $('btn-shuffle').onclick = () => post('/api/shuffle');
+  $('btn-sleep').onclick = () => post('/api/sleep');
   $('shuffle-min').onchange = e => post('/api/shuffle', {minutes: +e.target.value});
   $('btn-back').onclick = () => post('/api/tags');
   $('btn-bm').onclick = () => post('/api/bookmark');

@@ -9,9 +9,15 @@ import (
 )
 
 const (
-	wideMinWidth  = 100
-	tagsPaneWidth = 26
+	wideMinWidth     = 100
+	tagsPaneMinWidth = 26
+	tagsPaneMaxWidth = 40
 )
+
+// tagsPaneWidth grows with the screen, but the stations keep most of it.
+func tagsPaneWidth(screenWidth int) int {
+	return min(max(screenWidth/4, tagsPaneMinWidth), tagsPaneMaxWidth)
+}
 
 type listPane struct {
 	*tview.List
@@ -134,12 +140,14 @@ func (a *Application) buildLayout(wide bool) {
 			AddItem(a.hints, 1, 0, false)
 	}
 	if wide {
-		fill(a.tagsFlex, tview.NewFlex().
-			AddItem(a.tagsPane, tagsPaneWidth, 0, true).
-			AddItem(a.stationsPane, 0, 1, false))
-		fill(a.mainFlex, tview.NewFlex().
-			AddItem(a.tagsPane, tagsPaneWidth, 0, false).
-			AddItem(a.stationsPane, 0, 1, true))
+		a.tagsRow = tview.NewFlex().
+			AddItem(a.tagsPane, tagsPaneMinWidth, 0, true).
+			AddItem(a.stationsPane, 0, 1, false)
+		a.mainRow = tview.NewFlex().
+			AddItem(a.tagsPane, tagsPaneMinWidth, 0, false).
+			AddItem(a.stationsPane, 0, 1, true)
+		fill(a.tagsFlex, a.tagsRow)
+		fill(a.mainFlex, a.mainRow)
 	} else {
 		fill(a.tagsFlex, a.tagsPane)
 		fill(a.mainFlex, a.stationsPane)
@@ -165,6 +173,10 @@ func (a *Application) beforeDraw(screen tcell.Screen) bool {
 				a.syncTagCursor()
 			}
 		}
+	}
+	if a.wide {
+		a.tagsRow.ResizeItem(a.tagsPane, tagsPaneWidth(width), 0)
+		a.mainRow.ResizeItem(a.tagsPane, tagsPaneWidth(width), 0)
 	}
 	return false
 }

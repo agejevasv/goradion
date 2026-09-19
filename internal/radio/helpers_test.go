@@ -14,7 +14,12 @@ import (
 // commands fail softly when the socket is missing.
 func newTestApp(t *testing.T, options ...Option) (*Application, tcell.SimulationScreen) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	return newTestAppInHome(t, t.TempDir(), options...)
+}
+
+func newTestAppInHome(t *testing.T, home string, options ...Option) (*Application, tcell.SimulationScreen) {
+	t.Helper()
+	t.Setenv("HOME", home)
 
 	screen := tcell.NewSimulationScreen("")
 	if err := screen.Init(); err != nil {
@@ -26,7 +31,7 @@ func newTestApp(t *testing.T, options ...Option) (*Application, tcell.Simulation
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := NewApp(mpv.New(), stations, 0, options...)
+	a := NewApp(mpv.New(), stations, append([]Option{WithRemotePort(0)}, options...)...)
 	a.app.SetScreen(screen)
 	done := make(chan struct{})
 	go func() {

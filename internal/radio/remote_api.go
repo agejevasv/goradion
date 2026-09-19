@@ -40,6 +40,11 @@ type remoteShuffle struct {
 	Interval  int  `json:"interval"`
 }
 
+type remoteSleep struct {
+	Active    bool `json:"active"`
+	Remaining int  `json:"remaining"`
+}
+
 type remoteState struct {
 	Version  string          `json:"version"`
 	Page     string          `json:"page"`
@@ -48,6 +53,7 @@ type remoteState struct {
 	Stations []remoteStation `json:"stations"`
 	Player   remotePlayer    `json:"player"`
 	Shuffle  remoteShuffle   `json:"shuffle"`
+	Sleep    remoteSleep     `json:"sleep"`
 }
 
 type actionRequest struct {
@@ -80,6 +86,9 @@ func (a *Application) remoteState() remoteState {
 		},
 		Shuffle: remoteShuffle{Interval: int(a.shuffle.interval.Minutes())},
 	}
+	if a.sleep.active() {
+		st.Sleep = remoteSleep{Active: true, Remaining: int(a.sleep.remaining(time.Now()).Seconds())}
+	}
 	if a.shuffle.active {
 		st.Shuffle.Active = true
 		st.Shuffle.Remaining = int(a.shuffle.remaining(time.Now()).Seconds())
@@ -103,7 +112,6 @@ func (a *Application) remoteTags() []remoteTag {
 	if !a.bookmarks.empty() {
 		out = append(out, remoteTag{Name: bookmarksTag, Kind: "bookmarks"})
 	}
-	out = append(out, remoteTag{Name: allStationsTag, Kind: "all"})
 	for _, t := range a.tags {
 		out = append(out, remoteTag{Name: t})
 	}
@@ -121,7 +129,7 @@ func (a *Application) remoteShowTags(actionRequest) error {
 
 func (a *Application) remoteOpenTag(q actionRequest) error {
 	tag := tagRef{name: q.Tag, search: q.Search}
-	if (tag == tagRef{name: bookmarksTag} && a.bookmarks.empty()) || !a.openTag(tag) {
+	if (tag == tagRef{name: bookmarksTag} && a.bookmarks.empty()) || tag == (tagRef{name: allStationsTag}) || !a.openTag(tag) {
 		return fmt.Errorf("tag %q %w", q.Tag, errNotFound)
 	}
 	return nil
@@ -154,6 +162,7 @@ func (a *Application) remoteBookmark(q actionRequest) error {
 	}
 	a.bookmarks.toggle(station)
 	a.reloadStations()
+	a.syncBookmarksRow()
 	return nil
 }
 
@@ -187,5 +196,13 @@ func (a *Application) remoteShuffle(q actionRequest) error {
 		return errors.New("minutes must be 1-9")
 	}
 	a.setShuffleInterval(q.Minutes)
+	return nil
+}
+
+func (a *Application) remoteSleep(actionRequest) error {
+	if !a.sleep.active() && a.player.URL() == "" {
+		return errors.New("nothing playing")
+	}
+	a.cycleSleep()
 	return nil
 }

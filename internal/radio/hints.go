@@ -64,12 +64,12 @@ func (a *Application) currentHints() []hint {
 	case pageHelp:
 		return []hint{{"esc", "back"}, {glyphs.up + " " + glyphs.down, "scroll"}}
 	case pageMain:
-		hints := []hint{{"^B", "bookmark"}, {"^F", "search"}, {"^R", "shuffle"}, {"^P", "phone"}, {"^T", "theme"}, {"?", "help"}}
+		hints := []hint{{"^B", "bookmark"}, {"^F", "search"}, {"^R", "shuffle"}, {"^Z", "sleep"}, {"^P", "phone"}, {"^T", "theme"}, {"?", "help"}}
 		if !a.wide {
 			hints = append(hints, hint{"esc", "tags"})
 		}
 		return hints
 	default:
-		return []hint{{"^F", "search"}, {"^R", "shuffle"}, {"^P", "phone"}, {"^T", "theme"}, {"?", "help"}, {"esc", "quit"}}
+		return []hint{{"^F", "search"}, {"^R", "shuffle"}, {"^Z", "sleep"}, {"^P", "phone"}, {"^T", "theme"}, {"?", "help"}, {"esc", "quit"}}
 	}
 }

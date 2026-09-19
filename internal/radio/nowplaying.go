@@ -24,9 +24,11 @@ const (
 // nowPlaying is only touched on the UI goroutine.
 type nowPlaying struct {
 	*tview.Box
-	player     *mpv.Player
-	shuffle    *shuffle
-	bookmarked func(url string) bool
+	player      *mpv.Player
+	shuffle     *shuffle
+	sleep       *sleepTimer
+	bookmarked  func(url string) bool
+	cancelSleep func()
 
 	info    mpv.Info
 	hasInfo bool
@@ -34,6 +36,7 @@ type nowPlaying struct {
 	playingSince time.Time
 	songSince    time.Time
 	flashUntil   time.Time
+	sleepFlash   time.Time
 
 	level, peak float64
 	peakAt      time.Time
@@ -43,6 +46,7 @@ type nowPlaying struct {
 	spectrumOK  bool // and the bands too
 
 	gaugeX, gaugeY, gaugeW int
+	sleepX, sleepY, sleepW int
 
 	lastWidth int
 	lastFrame string
@@ -50,6 +54,7 @@ type nowPlaying struct {
 
 type cardFrame struct {
 	title          []seg
+	sleep          []seg // right of the title
 	rows           [][]seg
 	gaugeX, gaugeW int
 }
@@ -81,6 +86,34 @@ func (n *nowPlaying) flash(now time.Time) {
 	n.flashUntil = now.Add(volumeFlash)
 }
 
+func (n *nowPlaying) flashSleep(now time.Time) {
+	n.sleepFlash = now.Add(volumeFlash)
+}
+
+func (n *nowPlaying) sleeping() bool {
+	return n.sleep != nil && n.sleep.active()
+}
+
+// sleepLabel shows "off" briefly after the timer is turned off.
+func (n *nowPlaying) sleepLabel(now time.Time) []seg {
+	flashing := now.Before(n.sleepFlash)
+	if !n.sleeping() && !flashing {
+		return nil
+	}
+	text := "off"
+	if n.sleeping() {
+		text = clock(n.sleep.remaining(now) + time.Second - 1)
+	}
+	style := styleText.Foreground(colorWarn)
+	switch {
+	case flashing:
+		style = styleText.Foreground(colorBright).Bold(true)
+	case n.sleep.remaining(now) <= n.sleep.fade:
+		style = style.Bold(true)
+	}
+	return []seg{{" " + glyphs.sleep + " " + text + " ", style}}
+}
+
 func (n *nowPlaying) state() mpv.State {
 	inf := n.info
 	switch {
@@ -107,7 +140,7 @@ func (n *nowPlaying) playingURL() (string, mpv.State) {
 func (n *nowPlaying) animating(now time.Time) bool {
 	st := n.state()
 	return st == mpv.Buffering || st == mpv.Playing || st == mpv.Failed ||
-		now.Before(n.flashUntil) || n.shuffling() || n.level > 0 || n.peak > 0 ||
+		now.Before(n.flashUntil) || now.Before(n.sleepFlash) || n.sleeping() || n.shuffling() || n.level > 0 || n.peak > 0 ||
 		n.bands != [mpv.BandCount]float64{}
 }
 
@@ -162,6 +195,7 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 		dot = styleText.Foreground(liveGlow(now))
 	}
 	f.title = append([]seg{{" " + glyphs.live, dot}}, f.title...)
+	f.sleep = n.sleepLabel(now)
 	if st == mpv.Playing || st == mpv.Buffering {
 		if n.meterOK {
 			right = append(right, n.meter()...)
@@ -266,7 +300,7 @@ func spread(left, right []seg, width int) []seg {
 }
 
 func frameKey(f cardFrame) string {
-	return fmt.Sprint(f.title, f.rows)
+	return fmt.Sprint(f.title, f.sleep, f.rows)
 }
 
 func (n *nowPlaying) changed(now time.Time) bool {
@@ -282,6 +316,11 @@ func (n *nowPlaying) Draw(screen tcell.Screen) {
 	}
 	f := n.render(time.Now(), width)
 	drawSegs(screen, x+2, y, w-4, f.title)
+	n.sleepW = 0
+	if sw := segsWidth(f.sleep); sw > 0 && segsWidth(f.title)+sw+1 <= width {
+		n.sleepX, n.sleepY, n.sleepW = x+w-2-sw, y, sw
+		drawSegs(screen, n.sleepX, y, sw, f.sleep)
+	}
 	for i, row := range f.rows {
 		if i >= h-2 {
 			break
@@ -306,6 +345,10 @@ func (n *nowPlaying) MouseHandler() func(action tview.MouseAction, event *tcell.
 			n.flash(time.Now())
 			n.player.ChangeVolume(-mpv.VolumeStep)
 		case tview.MouseLeftClick:
+			if y == n.sleepY && n.sleepW > 0 && x >= n.sleepX && x < n.sleepX+n.sleepW && n.sleeping() {
+				n.cancelSleep()
+				n.flashSleep(time.Now())
+			}
 			if y == n.gaugeY && n.gaugeW > 0 && x >= n.gaugeX-1 && x <= n.gaugeX+n.gaugeW {
 				fraction := (float64(x-n.gaugeX) + 0.5) / float64(n.gaugeW)
 				n.flash(time.Now())

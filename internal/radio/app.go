@@ -17,12 +17,20 @@ func WithASCII(on bool) Option {
 }
 
 // WithRemote starts the remote control server together with the TUI. A nil
-// key means a random access code, an empty one means no code at all.
+// key keeps the configured one, an empty one means no code at all.
 func WithRemote(key *string) Option {
 	return func(a *Application) {
 		a.remoteAutostart = true
-		a.remoteKey = key
+		if key != nil {
+			a.remoteKey = key
+		}
 	}
+}
+
+// WithRemotePort overrides the configured preferred port; a free port is used
+// if it is taken.
+func WithRemotePort(port int) Option {
+	return func(a *Application) { a.remotePort = port }
 }
 
 // Application is the TUI. Its fields belong to the UI goroutine: other
@@ -39,6 +47,8 @@ type Application struct {
 	pages       *tview.Pages
 	pageHistory []page
 	tagsFlex    *tview.Flex
+	tagsRow     *tview.Flex // the panes of tagsFlex when wide
+	mainRow     *tview.Flex // and of mainFlex
 	mainFlex    *tview.Flex
 	helpFlex    *tview.Flex
 	helpView    *tview.TextView
@@ -58,6 +68,7 @@ type Application struct {
 	tag               tagRef    // the tag or search shown, zero for none
 	listed            []Station // the stations in the stations list
 	playing           Station   // the station last started
+	playingTag        tagRef
 	stationsList      *tview.List
 	stationsPane      *listPane
 	stationRows       []string // the station URL of each row, empty for the others
@@ -74,6 +85,7 @@ type Application struct {
 	lastSearch       searchView
 
 	shuffle shuffle
+	sleep   sleepTimer
 
 	remote          *Remote
 	remotePort      int
@@ -100,20 +112,19 @@ type searchView struct {
 	online   bool
 }
 
-// NewApp creates the TUI. remotePort is the preferred port for the remote
-// control server started with Ctrl+P; a free port is used if it is taken.
-func NewApp(player *mpv.Player, stations []Station, remotePort int, options ...Option) *Application {
+func NewApp(player *mpv.Player, stations []Station, options ...Option) *Application {
 	a := &Application{
-		player:     player,
-		stations:   stations,
-		tags:       collectTags(stations),
-		bookmarks:  NewBookmarks(stations),
-		config:     loadConfig(),
-		shuffle:    shuffle{interval: defaultShuffleInterval, fade: shuffleFade},
-		remotePort: remotePort,
-		ascii:      detectASCII(),
-		stopped:    make(chan struct{}),
+		player:    player,
+		stations:  stations,
+		tags:      collectTags(stations),
+		bookmarks: NewBookmarks(stations),
+		config:    loadConfig(),
+		shuffle:   shuffle{interval: defaultShuffleInterval, fade: shuffleFade},
+		sleep:     sleepTimer{fade: sleepFade},
+		ascii:     detectASCII(),
+		stopped:   make(chan struct{}),
 	}
+	a.remoteAutostart, a.remotePort, a.remoteKey = a.config.Remote.Autostart, a.config.Remote.Port, a.config.Remote.Key
 	for _, option := range options {
 		option(a)
 	}
@@ -128,6 +139,7 @@ func NewApp(player *mpv.Player, stations []Station, remotePort int, options ...O
 	a.setupSearchModal()
 	a.setupRemoteModal()
 	a.setupThemeModal()
+	a.restoreSession()
 
 	a.app = tview.NewApplication().
 		SetRoot(a.pages, true).
@@ -140,6 +152,8 @@ func NewApp(player *mpv.Player, stations []Station, remotePort int, options ...O
 
 func (a *Application) Run() error {
 	defer a.stopRemote()
+	// Deferred first to run after stopShuffle, which restores a faded volume.
+	defer a.saveSession()
 	if a.remoteAutostart {
 		if _, err := a.startRemote(); err != nil {
 			// The modal retries and shows the error.
@@ -148,8 +162,10 @@ func (a *Application) Run() error {
 	}
 	defer a.restoreTermBg()
 	defer a.stopShuffle()
+	defer a.cancelSleep()
 
 	defer close(a.stopped)
+	go a.stopOnSignal()
 	go a.animate()
 	go a.followPlayer()
 	return a.app.Run()
@@ -201,6 +217,8 @@ func (a *Application) followPlayer() {
 func (a *Application) setupPages() {
 	a.card = newNowPlaying(a.player, &a.shuffle)
 	a.card.bookmarked = a.bookmarks.has
+	a.card.sleep = &a.sleep
+	a.card.cancelSleep = a.cancelSleep
 	a.hints = newHintBar(a)
 
 	a.tagsList = newList()
