@@ -45,7 +45,7 @@ func (a *Application) show(p page) {
 
 	a.pages.SwitchToPage(string(p))
 
-	if a.wide && p == pageTags && a.tag == "" {
+	if a.wide && p == pageTags && a.tag.name == "" {
 		a.previewTagAtCursor()
 	} else if a.wide && (p == pageTags || p == pageMain) {
 		a.syncTagCursor()

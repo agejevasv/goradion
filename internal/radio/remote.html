@@ -419,7 +419,7 @@
         else if (t.kind === 'search') glyph = icon('#i-search');
         ul.appendChild(row({
           name: t.name, glyph, glyphClass: cls, meta: t.kind === 'search' ? (t.online ? 'online search' : 'search') : '',
-          chevron: true, onclick: () => post('/api/tag', {tag: t.name})
+          chevron: true, onclick: () => post('/api/tag', {tag: t.name, search: t.kind === 'search'})
         }));
       }
     }

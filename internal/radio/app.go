@@ -26,7 +26,7 @@ func WithRemote(key *string) Option {
 }
 
 // Application is the TUI. Its fields belong to the UI goroutine: other
-// goroutines reach them through app.QueueUpdate or app.QueueUpdateDraw.
+// goroutines reach them through queueUpdate or queueUpdateDraw.
 type Application struct {
 	player    *mpv.Player
 	stations  []Station // the stations list, never modified
@@ -35,6 +35,7 @@ type Application struct {
 	config    *config
 
 	app         *tview.Application
+	stopped     chan struct{} // closed once Run's event loop is over
 	pages       *tview.Pages
 	pageHistory []page
 	tagsFlex    *tview.Flex
@@ -50,11 +51,11 @@ type Application struct {
 
 	tagsList    *tview.List
 	tagsPane    *listPane
-	tagRows     []string // the tag of each row
-	tagCounts   map[string]int
+	tagRows     []tagRef // what each row opens
+	tagCounts   map[tagRef]int
 	syncingTags bool // suppresses the tags list's changed callback
 
-	tag               string    // the tag or search shown, empty for none
+	tag               tagRef    // the tag or search shown, zero for none
 	listed            []Station // the stations in the stations list
 	playing           Station   // the station last started
 	stationsList      *tview.List
@@ -85,6 +86,13 @@ type Application struct {
 	themeList *tview.List
 }
 
+// tagRef names a list of stations: a tag, All Stations, Bookmarks, or the last
+// search, which may be named like any of them.
+type tagRef struct {
+	name   string
+	search bool
+}
+
 // searchView is the last search shown in the stations list.
 type searchView struct {
 	query    string
@@ -104,6 +112,7 @@ func NewApp(player *mpv.Player, stations []Station, remotePort int, options ...O
 		shuffle:    shuffle{interval: defaultShuffleInterval, fade: shuffleFade},
 		remotePort: remotePort,
 		ascii:      detectASCII(),
+		stopped:    make(chan struct{}),
 	}
 	for _, option := range options {
 		option(a)
@@ -140,22 +149,50 @@ func (a *Application) Run() error {
 	defer a.restoreTermBg()
 	defer a.stopShuffle()
 
-	stop := make(chan struct{})
-	defer close(stop)
-	go a.animate(stop)
-	go a.followPlayer(stop)
+	defer close(a.stopped)
+	go a.animate()
+	go a.followPlayer()
 	return a.app.Run()
 }
 
+// queueUpdate is tview's QueueUpdate, except that it reports false rather
+// than block for good once the TUI has exited, when nothing runs queued
+// updates. It reports whether f ran.
+func (a *Application) queueUpdate(f func()) bool {
+	return a.queue(a.app.QueueUpdate, f)
+}
+
+// queueUpdateDraw is queueUpdate followed by a draw.
+func (a *Application) queueUpdateDraw(f func()) bool {
+	return a.queue(a.app.QueueUpdateDraw, f)
+}
+
+func (a *Application) queue(enqueue func(func()) *tview.Application, f func()) bool {
+	done := make(chan struct{})
+	// After the exit the enqueueing goroutine is stuck instead of the caller.
+	go enqueue(func() {
+		f()
+		close(done)
+	})
+	select {
+	case <-done:
+		return true
+	case <-a.stopped:
+		return false
+	}
+}
+
 // followPlayer shows every player state change on the card.
-func (a *Application) followPlayer(stop <-chan struct{}) {
+func (a *Application) followPlayer() {
 	for {
 		changed := a.player.Changed()
 		inf := a.player.Snapshot()
-		a.app.QueueUpdateDraw(func() { a.card.update(inf, time.Now()) })
+		if !a.queueUpdateDraw(func() { a.card.update(inf, time.Now()) }) {
+			return
+		}
 		select {
 		case <-changed:
-		case <-stop:
+		case <-a.stopped:
 			return
 		}
 	}

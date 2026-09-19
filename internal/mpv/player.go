@@ -31,6 +31,7 @@ const (
 	Playing
 	Stopped
 	Failed // the stream broke and is retried
+	Exited // mpv is gone, nothing plays until goradion restarts
 )
 
 var statusText = [...]string{
@@ -39,6 +40,7 @@ var statusText = [...]string{
 	Playing:   "Playing",
 	Stopped:   "Stopped",
 	Failed:    "Network or stream issues",
+	Exited:    "mpv exited, please restart goradion",
 }
 
 // Player drives an mpv process over its JSON IPC socket. Its methods are safe
@@ -226,6 +228,9 @@ func (p *Player) Toggle(station, url string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	if p.info.State == Exited {
+		return
+	}
 	if url == p.info.URL {
 		p.stopLocked()
 		return
@@ -246,7 +251,7 @@ func (p *Player) Toggle(station, url string) {
 func (p *Player) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.info.URL != "" {
+	if p.info.URL != "" && p.info.State != Exited {
 		p.stopLocked()
 	}
 }
@@ -299,6 +304,17 @@ func (p *Player) scheduleRetry(reason string) {
 		p.notifyLocked()
 		p.loadLocked()
 	}()
+}
+
+// exited reports that the mpv process is gone. The station stays on show.
+func (p *Player) exited() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.retry.cancel()
+	p.info.setState(Exited, "")
+	p.info.Song = ""
+	p.info.Bitrate = 0
+	p.notifyLocked()
 }
 
 func (p *Player) ChangeVolume(delta int) {

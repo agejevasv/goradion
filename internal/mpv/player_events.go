@@ -10,7 +10,8 @@ import (
 	"github.com/agejevasv/goradion/internal/logging"
 )
 
-// readEvents follows mpv's events on c until the connection closes.
+// readEvents follows mpv's events on c until the connection closes, which
+// happens when mpv exits.
 func (p *Player) readEvents(c net.Conn) {
 	defer c.Close()
 
@@ -30,6 +31,7 @@ func (p *Player) readEvents(c net.Conn) {
 		line, err := reader.ReadBytes('\n')
 		if err != nil {
 			logging.Println("mpv events:", err)
+			p.exited()
 			return
 		}
 		m := parseMessage(line)

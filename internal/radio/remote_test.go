@@ -180,7 +180,7 @@ func TestRemoteControl(t *testing.T) {
 	if code != 200 || st.Page != "stations" || st.Tag != "Jazz" || len(st.Stations) == 0 {
 		t.Fatalf("open tag: %d %+v", code, st)
 	}
-	if got := onUI(a, func() string { return a.tag }); got != "Jazz" {
+	if got := onUI(a, func() string { return a.tag.name }); got != "Jazz" {
 		t.Fatalf("TUI tag = %q", got)
 	}
 	if code, _ := c.do("POST", "/api/tag", map[string]any{"tag": "Nope"}); code != 404 {

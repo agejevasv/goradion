@@ -84,7 +84,11 @@ func (n *nowPlaying) flash(now time.Time) {
 func (n *nowPlaying) state() mpv.State {
 	inf := n.info
 	switch {
-	case !n.hasInfo || inf.Station == "":
+	case !n.hasInfo:
+		return mpv.Idle
+	case inf.State == mpv.Exited:
+		return mpv.Exited
+	case inf.Station == "":
 		return mpv.Idle
 	case inf.URL == "":
 		return mpv.Stopped
@@ -142,6 +146,9 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 	case mpv.Failed:
 		f.title = []seg{{" Signal lost ", styleText.Foreground(colorDanger)}}
 		left = []seg{{glyphs.fail + " ", styleText.Foreground(colorDanger).Bold(true)}, {station, strong}}
+	case mpv.Exited:
+		f.title = []seg{{" Player gone ", styleText.Foreground(colorDanger)}}
+		left = []seg{{glyphs.fail + " ", styleText.Foreground(colorDanger).Bold(true)}, {station, strong}}
 	case mpv.Playing:
 		f.title = []seg{{" Now playing ", styleAccent.Bold(true)}}
 		left = []seg{{glyphs.play + " ", styleAccent}, {station, strong}}
@@ -176,6 +183,8 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 		left = []seg{{"Buffering" + glyphs.ellipsis, styleDim}}
 	case mpv.Failed:
 		left = []seg{{inf.Status, styleText.Foreground(colorDanger)}, {" " + glyphs.dot + " retrying", styleDim}}
+	case mpv.Exited:
+		left = []seg{{inf.Status, styleText.Foreground(colorDanger)}}
 	case mpv.Playing:
 		if !n.playingSince.IsZero() {
 			right = []seg{{clock(now.Sub(n.playingSince)) + " on air", styleDim}}

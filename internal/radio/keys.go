@@ -33,7 +33,7 @@ func (a *Application) handleKey(event *tcell.EventKey) *tcell.EventKey {
 			a.app.Stop()
 		case pageMain:
 			if !a.wide {
-				a.tag = ""
+				a.tag = tagRef{}
 			}
 			a.show(pageTags)
 		default:
@@ -92,7 +92,7 @@ func (a *Application) handleRune(event *tcell.EventKey) *tcell.EventKey {
 			a.show(pageHelp)
 		}
 	case '~':
-		a.openTag(allStationsTag)
+		a.openTag(tagRef{name: allStationsTag})
 	case ':':
 		a.showSearchModal(false)
 	default:

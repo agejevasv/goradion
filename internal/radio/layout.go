@@ -159,7 +159,7 @@ func (a *Application) beforeDraw(screen tcell.Screen) bool {
 		a.buildLayout(wide)
 		a.reloadStations()
 		if wide {
-			if a.isFront(pageTags) || a.tag == "" {
+			if a.isFront(pageTags) || a.tag.name == "" {
 				a.previewTagAtCursor()
 			} else {
 				a.syncTagCursor()
@@ -177,8 +177,8 @@ func (a *Application) previewTagAtCursor() {
 
 func (a *Application) syncTagCursor() {
 	tag := a.tag
-	if tag == "" {
-		tag = allStationsTag
+	if tag.name == "" {
+		tag = tagRef{name: allStationsTag}
 	}
 	for i, t := range a.tagRows {
 		if t == tag {
@@ -246,7 +246,7 @@ func (a *Application) drawStationMarks(screen tcell.Screen) {
 		case mpv.Buffering:
 			frame := spinnerFrame(time.Now())
 			recolor(i, frame, styleText.Foreground(colorWarn))
-		case mpv.Failed:
+		case mpv.Failed, mpv.Exited:
 			recolor(i, glyphs.fail, styleText.Foreground(colorDanger))
 		default:
 			recolor(i, glyphs.play, styleAccent)

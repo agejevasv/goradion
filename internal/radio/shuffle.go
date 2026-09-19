@@ -91,7 +91,7 @@ func (a *Application) shuffleNext(ctx context.Context, fade, timeout time.Durati
 	a.player.Fade(ctx, 0, fade)
 	picked := time.Now()
 	var url string
-	a.app.QueueUpdateDraw(func() {
+	a.queueUpdateDraw(func() {
 		if ctx.Err() != nil {
 			return
 		}

@@ -28,7 +28,10 @@ const (
 	maxRequestBytes = 64 << 10
 )
 
-var errNotFound = errors.New("not found")
+var (
+	errNotFound = errors.New("not found")
+	errExiting  = errors.New("goradion is exiting")
+)
 
 // Remote is the HTTP server behind Ctrl+P. It lives until the TUI exits.
 type Remote struct {
@@ -154,7 +157,10 @@ func (r *Remote) index(w http.ResponseWriter, _ *http.Request) {
 
 func (r *Remote) state(w http.ResponseWriter, _ *http.Request) {
 	var st remoteState
-	r.app.app.QueueUpdate(func() { st = r.app.remoteState() })
+	if !r.app.queueUpdate(func() { st = r.app.remoteState() }) {
+		http.Error(w, errExiting.Error(), http.StatusServiceUnavailable)
+		return
+	}
 	writeJSON(w, st)
 }
 
@@ -170,11 +176,15 @@ func (r *Remote) action(run func(q actionRequest) error) http.HandlerFunc {
 		}
 
 		var st remoteState
-		r.app.app.QueueUpdateDraw(func() {
+		ran := r.app.queueUpdateDraw(func() {
 			if err = run(q); err == nil {
 				st = r.app.remoteState()
 			}
 		})
+		if !ran {
+			http.Error(w, errExiting.Error(), http.StatusServiceUnavailable)
+			return
+		}
 		if err != nil {
 			status := http.StatusBadRequest
 			if errors.Is(err, errNotFound) {

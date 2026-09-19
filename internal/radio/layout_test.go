@@ -1,6 +1,7 @@
 package radio
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestScreenLayouts(t *testing.T) {
 	}
 
 	stations := onUI(a, func() []Station {
-		a.openTag("Jazz")
+		a.openTag(tagRef{name: "Jazz"})
 		return a.listed
 	})
 	now := time.Now()
@@ -42,11 +43,11 @@ func TestScreenLayouts(t *testing.T) {
 
 	screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
 	waitFor(t, "tab to tags", func() bool { return onUI(a, a.frontPage) == pageTags })
-	if onUI(a, func() string { return a.tag }) != "Jazz" {
+	if onUI(a, func() string { return a.tag.name }) != "Jazz" {
 		t.Fatal("tab must keep the tag")
 	}
 	screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone)
-	waitFor(t, "preview next tag", func() bool { return onUI(a, func() string { return a.tag }) != "Jazz" })
+	waitFor(t, "preview next tag", func() bool { return onUI(a, func() string { return a.tag.name }) != "Jazz" })
 	screen.InjectKey(tcell.KeyTab, 0, tcell.ModNone)
 	waitFor(t, "tab to stations", func() bool { return onUI(a, a.frontPage) == pageMain })
 
@@ -72,7 +73,7 @@ func TestClickStationFromTagsPage(t *testing.T) {
 	waitFor(t, "wide layout", func() bool { return onUI(a, func() bool { return a.wide }) })
 	screen.InjectKey(tcell.KeyDown, 0, tcell.ModNone)
 	waitFor(t, "preview the first tag", func() bool {
-		return onUI(a, func() bool { return a.tag == a.tags[0] && a.frontPage() == pageTags })
+		return onUI(a, func() bool { return a.tag.name == a.tags[0] && a.frontPage() == pageTags })
 	})
 
 	pos := onUI(a, func() [2]int { x, y, _, _ := a.stationsList.GetInnerRect(); return [2]int{x + 5, y + 3} })
@@ -90,7 +91,7 @@ func TestClickStationFromTagsPage(t *testing.T) {
 func TestWheelScrollsPastCursor(t *testing.T) {
 	a, screen := newTestApp(t)
 	resize(a, screen, 120, 40)
-	a.app.QueueUpdateDraw(func() { a.openTag(allStationsTag) })
+	a.app.QueueUpdateDraw(func() { a.openTag(tagRef{name: allStationsTag}) })
 	pos := onUI(a, func() [2]int { x, y, _, _ := a.stationsList.GetInnerRect(); return [2]int{x + 5, y + 3} })
 	offset := func() int { return onUI(a, func() int { o, _ := a.stationsList.GetOffset(); return o }) }
 	scroll := func(wheel tcell.ButtonMask, want int) {
@@ -105,4 +106,49 @@ func TestWheelScrollsPastCursor(t *testing.T) {
 	}
 	scroll(tcell.WheelDown, 60)
 	scroll(tcell.WheelUp, 0)
+}
+
+// A search named like a tag gets a row of its own, and each row opens its own
+// stations.
+func TestSearchNamedLikeTag(t *testing.T) {
+	a, _ := newTestApp(t)
+	found := []Station{{title: "Found", url: "http://found"}}
+	onUI(a, func() bool { a.openSearch("Jazz", found, true); return true })
+
+	rows := onUI(a, func() []tagRef { return slices.Clone(a.tagRows) })
+	if !slices.Contains(rows, tagRef{name: "Jazz"}) || !slices.Contains(rows, tagRef{name: "Jazz", search: true}) {
+		t.Fatalf("tag rows %v", rows)
+	}
+
+	listed := func(tag tagRef) []Station {
+		return onUI(a, func() []Station { a.openTag(tag); return a.listed })
+	}
+	if got := listed(tagRef{name: "Jazz"}); len(got) < 2 || slices.ContainsFunc(got, func(s Station) bool { return s.url == "http://found" }) {
+		t.Fatalf("the Jazz tag lists %v", got)
+	}
+	if got := listed(tagRef{name: "Jazz", search: true}); len(got) != 1 || got[0].url != "http://found" {
+		t.Fatalf("the Jazz search lists %v", got)
+	}
+	if got := onUI(a, a.stationsList.GetTitle); !strings.Contains(got, "Jazz (online)") {
+		t.Fatalf("title %q", got)
+	}
+}
+
+// Once the TUI has exited, queued updates report so instead of blocking.
+func TestQueueUpdateAfterExit(t *testing.T) {
+	a, _ := newTestApp(t)
+	if !a.queueUpdate(func() {}) {
+		t.Fatal("update did not run")
+	}
+	stopTestApp(a)
+	done := make(chan bool)
+	go func() { done <- a.queueUpdateDraw(func() {}) }()
+	select {
+	case ran := <-done:
+		if ran {
+			t.Fatal("update ran after exit")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("update blocked after exit")
+	}
 }

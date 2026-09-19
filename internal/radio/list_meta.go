@@ -36,16 +36,16 @@ func rowLabelEnd(list *tview.List, index, textX int) int {
 }
 
 func (a *Application) countTags() {
-	a.tagCounts = map[string]int{}
+	a.tagCounts = map[tagRef]int{}
 	for _, s := range a.stations {
 		for i, t := range s.tags {
 			if !slices.Contains(s.tags[:i], t) { // a tag repeated in the CSV lists the station once
-				a.tagCounts[t]++
+				a.tagCounts[tagRef{name: t}]++
 			}
 		}
 	}
 	if q := a.lastSearch.query; q != "" {
-		a.tagCounts[q] = len(a.lastSearch.stations)
+		a.tagCounts[tagRef{name: q, search: true}] = len(a.lastSearch.stations)
 	}
 }
 
@@ -59,7 +59,7 @@ func (a *Application) drawTagCounts(screen tcell.Screen) {
 			return
 		}
 		count, ok := a.tagCounts[a.tagRows[i]]
-		if a.tagRows[i] == bookmarksTag { // changes with Ctrl+B
+		if a.tagRows[i] == (tagRef{name: bookmarksTag}) { // changes with Ctrl+B
 			count, ok = len(a.bookmarks.list()), true
 		}
 		if !ok {

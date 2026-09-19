@@ -300,3 +300,35 @@ func TestWaitPlaying(t *testing.T) {
 		t.Fatal("WaitPlaying ignored the other stream or the timeout")
 	}
 }
+
+func TestPlayerExited(t *testing.T) {
+	mpv := startFakeMPV(t)
+	p := New()
+	c, err := netDial()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { p.readEvents(c); close(done) }()
+	mpv.expect("observe_property")
+
+	p.Toggle("Radio", "http://radio")
+	mpv.expect("loadfile")
+
+	// mpv exiting closes its end of the connection.
+	mpv.mu.Lock()
+	mpv.events.Close()
+	mpv.mu.Unlock()
+	<-done
+	inf := p.Snapshot()
+	if inf.State != Exited || inf.Station != "Radio" || inf.Status != "mpv exited, please restart goradion" {
+		t.Fatalf("after exit: %+v", inf)
+	}
+
+	p.Toggle("Other", "http://other")
+	p.Stop()
+	mpv.expectNone("loadfile", 200*time.Millisecond)
+	if inf := p.Snapshot(); inf.State != Exited || inf.Station != "Radio" {
+		t.Fatalf("played after exit: %+v", inf)
+	}
+}

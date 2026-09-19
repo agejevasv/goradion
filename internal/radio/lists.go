@@ -44,22 +44,22 @@ func (a *Application) showTags() {
 	cursor := list.GetCurrentItem()
 	list.Clear()
 	a.tagRows = a.tagRows[:0]
-	add := func(label string, shortcut rune, tag string) {
+	add := func(label string, shortcut rune, tag tagRef) {
 		list.AddItem(label, "", shortcut, func() { a.openTag(tag) })
 		a.tagRows = append(a.tagRows, tag)
 	}
 
 	a.countTags()
-	add(bookmarksTag, '$', bookmarksTag)
+	add(bookmarksTag, '$', tagRef{name: bookmarksTag})
 	for i, tag := range a.tags {
-		add(tview.Escape(tag), idxToRune(i), tag)
+		add(tview.Escape(tag), idxToRune(i), tagRef{name: tag})
 	}
 	if q := a.lastSearch.query; q != "" {
 		label := tview.Escape(q)
 		if a.lastSearch.online {
 			label += " " + fgTag(colorDim) + "(online)[-]"
 		}
-		add(label, '^', q)
+		add(label, '^', tagRef{name: q, search: true})
 	}
 	list.SetCurrentItem(cursor)
 }
@@ -72,18 +72,18 @@ func (a *Application) refreshTags() {
 }
 
 // stationsForTag is what the stations list shows for a tag or search.
-func (a *Application) stationsForTag(tag string) []Station {
+func (a *Application) stationsForTag(tag tagRef) []Station {
 	switch {
-	case tag == "" || tag == allStationsTag:
-		return a.stations
-	case tag == a.lastSearch.query:
+	case tag.search:
 		return a.lastSearch.stations
-	case tag == bookmarksTag:
+	case tag.name == "" || tag.name == allStationsTag:
+		return a.stations
+	case tag.name == bookmarksTag:
 		return a.bookmarks.list()
 	}
 	var match []Station
 	for _, s := range a.stations {
-		if slices.Contains(s.tags, tag) {
+		if slices.Contains(s.tags, tag.name) {
 			match = append(match, s)
 		}
 	}
@@ -91,9 +91,8 @@ func (a *Application) stationsForTag(tag string) []Station {
 }
 
 // loadTag is openTag without switching pages.
-func (a *Application) loadTag(tag string) bool {
-	if tag == "" || (tag != bookmarksTag && tag != allStationsTag && tag != a.lastSearch.query &&
-		!slices.Contains(a.tags, tag)) {
+func (a *Application) loadTag(tag tagRef) bool {
+	if !a.tagExists(tag) {
 		return false
 	}
 	a.tag = tag
@@ -101,7 +100,14 @@ func (a *Application) loadTag(tag string) bool {
 	return true
 }
 
-func (a *Application) openTag(tag string) bool {
+func (a *Application) tagExists(tag tagRef) bool {
+	if tag.search {
+		return tag.name != "" && tag.name == a.lastSearch.query
+	}
+	return tag.name == bookmarksTag || tag.name == allStationsTag || slices.Contains(a.tags, tag.name)
+}
+
+func (a *Application) openTag(tag tagRef) bool {
 	if !a.loadTag(tag) {
 		return false
 	}
@@ -117,11 +123,11 @@ func (a *Application) showStations(stations []Station) {
 	list.Clear()
 	a.listed = stations
 	a.stationRows = a.stationRows[:0]
-	a.stationsBackLink = a.tag != "" && !a.wide
+	a.stationsBackLink = a.tag.name != "" && !a.wide
 
 	if a.stationsBackLink {
-		list.AddItem(glyphs.back+" "+tview.Escape(a.tag), "", '#', func() {
-			a.tag = ""
+		list.AddItem(glyphs.back+" "+tview.Escape(a.tag.name), "", '#', func() {
+			a.tag = tagRef{}
 			a.show(pageTags)
 		})
 		a.stationRows = append(a.stationRows, "")
@@ -144,7 +150,7 @@ func (a *Application) showStations(stations []Station) {
 	a.emptyStationsText = ""
 	if len(stations) == 0 {
 		a.emptyStationsText = "No stations"
-		if a.tag == bookmarksTag {
+		if a.tag == (tagRef{name: bookmarksTag}) {
 			a.emptyStationsText = "No bookmarks yet " + glyphs.dot + " press Ctrl+B on a station to add it"
 		}
 	}
@@ -160,14 +166,15 @@ func stationLabel(s Station, bookmarked bool) string {
 }
 
 func (a *Application) setStationsTitle(count int) {
-	name, icon := a.tag, glyphs.notes
-	switch a.tag {
-	case "":
+	name, icon := a.tag.name, glyphs.notes
+	switch {
+	case a.tag.search:
+	case name == "":
 		name = allStationsTag
-	case bookmarksTag:
+	case name == bookmarksTag:
 		icon = glyphs.star
 	}
-	if a.tag != "" && a.tag == a.lastSearch.query && a.lastSearch.online {
+	if a.tag.search && a.lastSearch.online {
 		name += " (online)"
 	}
 	unit := "stations"

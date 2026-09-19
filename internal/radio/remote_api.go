@@ -52,6 +52,7 @@ type remoteState struct {
 
 type actionRequest struct {
 	Tag     string `json:"tag"`
+	Search  bool   `json:"search"` // Tag is the last search
 	URL     string `json:"url"`
 	Volume  *int   `json:"volume"`
 	Minutes int    `json:"minutes"`
@@ -65,7 +66,7 @@ func (a *Application) remoteState() remoteState {
 	st := remoteState{
 		Version:  VersionString(),
 		Page:     "tags",
-		Tag:      a.tag,
+		Tag:      a.tag.name,
 		Tags:     a.remoteTags(),
 		Stations: []remoteStation{},
 		Player: remotePlayer{
@@ -113,13 +114,14 @@ func (a *Application) remoteTags() []remoteTag {
 }
 
 func (a *Application) remoteShowTags(actionRequest) error {
-	a.tag = ""
+	a.tag = tagRef{}
 	a.show(pageTags)
 	return nil
 }
 
 func (a *Application) remoteOpenTag(q actionRequest) error {
-	if (q.Tag == bookmarksTag && a.bookmarks.empty()) || !a.openTag(q.Tag) {
+	tag := tagRef{name: q.Tag, search: q.Search}
+	if (tag == tagRef{name: bookmarksTag} && a.bookmarks.empty()) || !a.openTag(tag) {
 		return fmt.Errorf("tag %q %w", q.Tag, errNotFound)
 	}
 	return nil

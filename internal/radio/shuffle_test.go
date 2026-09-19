@@ -13,7 +13,7 @@ func TestShuffle(t *testing.T) {
 	p := a.player
 
 	first := onUI(a, func() string {
-		a.openTag(allStationsTag)
+		a.openTag(tagRef{name: allStationsTag})
 		a.toggleShuffle()
 		return p.URL()
 	})

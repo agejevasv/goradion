@@ -229,7 +229,7 @@ func (a *Application) startOnlineSearch(query string) {
 	go func() {
 		found, err := searchRadioBrowser(query)
 
-		a.app.QueueUpdateDraw(func() {
+		a.queueUpdateDraw(func() {
 			if generation != a.searchGeneration {
 				return
 			}
@@ -326,7 +326,7 @@ func (a *Application) search(query string) {
 // openSearch shows search results in the stations list, and adds the search
 // to the tags.
 func (a *Application) openSearch(query string, stations []Station, online bool) {
-	a.tag = query
+	a.tag = tagRef{name: query, search: true}
 	a.lastSearch = searchView{query: query, stations: stations, online: online}
 	a.showStations(stations)
 	a.refreshTags()
