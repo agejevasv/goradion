@@ -55,7 +55,8 @@ func follow(current, target, dt float64) float64 {
 }
 
 // meter draws the spectrum, one cell per band with the bass on the left, or
-// the level when the player measures nothing else.
+// the level when the player measures nothing else. It shares the live colour
+// with the card's dot: both show sound.
 func (n *nowPlaying) meter() []seg {
 	if !n.spectrumOK {
 		return n.levelMeter()
@@ -68,7 +69,7 @@ func (n *nowPlaying) meter() []seg {
 			out[i] = seg{glyphs.bands[0], styleDim}
 			continue
 		}
-		out[i] = seg{glyphs.bands[(step-1)*len(glyphs.bands)/steps], styleAccent}
+		out[i] = seg{glyphs.bands[(step-1)*len(glyphs.bands)/steps], styleText.Foreground(colorLive)}
 	}
 	return out
 }
@@ -90,7 +91,7 @@ func (n *nowPlaying) levelMeter() []seg {
 func vuColor(cell int) tcell.Color {
 	switch f := float64(cell+1) / vuCells; {
 	case f <= 0.7:
-		return colorAccent
+		return colorLive
 	case f <= 0.9:
 		return colorWarn
 	default:

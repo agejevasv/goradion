@@ -22,12 +22,18 @@ func (h *hintBar) Draw(screen tcell.Screen) {
 	drawSegs(screen, x+1, y, w-1, hintSegs(h.app.currentHints(), w-1))
 }
 
+// hintSegs draws the keys as keycaps on the cursor's surface; the terminal
+// theme, which has none, keeps them bold.
 func hintSegs(hints []hint, width int) []seg {
-	const gap = "   "
+	gap, key := "   ", func(k string) seg { return seg{k, styleKey} }
+	if colorSurface != tcell.ColorDefault {
+		gap = "  "
+		key = func(k string) seg { return seg{" " + k + " ", styleKey.Background(colorSurface)} }
+	}
 	var out []seg
 	used := 0
 	for i, h := range hints {
-		part := []seg{{h.key, styleKey}, {" " + h.label, styleDim}}
+		part := []seg{key(h.key), {" " + h.label, styleDim}}
 		w := segsWidth(part)
 		if i > 0 {
 			w += len(gap)

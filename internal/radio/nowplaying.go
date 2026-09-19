@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	glowPeriod   = 2 * time.Second
 	cardHeight   = 5 // borders and three rows
 	volumeFlash  = 1500 * time.Millisecond
 	vuCells      = 12
@@ -144,6 +145,12 @@ func (n *nowPlaying) render(now time.Time, width int) cardFrame {
 		f.title = []seg{{" Now playing ", styleAccent.Bold(true)}}
 		left = []seg{{glyphs.play + " ", styleAccent}, {station, strong}}
 	}
+	// The dot glows only while there is sound.
+	dot := styleDim
+	if st == mpv.Playing {
+		dot = styleText.Foreground(liveGlow(now))
+	}
+	f.title = append([]seg{{" " + glyphs.live, dot}}, f.title...)
 	if st == mpv.Playing || st == mpv.Buffering {
 		if n.meterOK {
 			right = append(right, n.meter()...)
@@ -296,4 +303,18 @@ func (n *nowPlaying) MouseHandler() func(action tview.MouseAction, event *tcell.
 		}
 		return true, nil
 	})
+}
+
+// liveGlow fades the dot from the live colour to dim and back once per
+// glowPeriod. The terminal's own colours can't be blended, so there it blinks.
+func liveGlow(now time.Time) tcell.Color {
+	phase := float64(now.UnixMilli()%glowPeriod.Milliseconds()) / float64(glowPeriod.Milliseconds())
+	glow := 0.5 + 0.5*math.Cos(2*math.Pi*phase)
+	if colorBg == tcell.ColorDefault {
+		if glow < 0.5 {
+			return colorDim
+		}
+		return colorLive
+	}
+	return mix(colorDim, colorLive, glow)
 }

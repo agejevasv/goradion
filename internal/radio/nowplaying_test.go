@@ -25,6 +25,9 @@ func (f fakeMeter) Spectrum() ([mpv.BandCount]float64, time.Time, bool) {
 func TestSpectrumCard(t *testing.T) {
 	applyGlyphs(false)
 	defer applyGlyphs(false)
+	defer useTheme(themes[0])
+	material, _ := findTheme("material") // its green differs from its accent
+	useTheme(material)
 	now := time.Now()
 	n := newNowPlaying(nil, nil)
 	n.update(mpv.Info{State: mpv.Playing, Station: "Radio", URL: "http://radio", Song: "A", Volume: 50, Bitrate: 128}, now)
@@ -36,7 +39,7 @@ func TestSpectrumCard(t *testing.T) {
 	if got := segsText(cells); got != "▁▁▁▂▃▄▅▆▆▇██" {
 		t.Errorf("spectrum = %q", got)
 	}
-	for cell, want := range map[int]tcell.Color{0: colorDim, 1: colorDim, 2: colorAccent, 7: colorAccent, 11: colorAccent} {
+	for cell, want := range map[int]tcell.Color{0: colorDim, 1: colorDim, 2: colorLive, 7: colorLive, 11: colorLive} {
 		if fg, _, _ := cells[cell].style.Decompose(); fg != want {
 			t.Errorf("cell %d is %v, want %v", cell, fg, want)
 		}
@@ -64,7 +67,7 @@ func TestSpectrumCard(t *testing.T) {
 	cells = n.meter()
 	lit, _, _ := cells[5].style.Decompose()
 	unlit, _, _ := cells[6].style.Decompose()
-	if len(cells) != vuCells || lit != colorAccent || unlit != colorDim {
+	if len(cells) != vuCells || lit != colorLive || unlit != colorDim {
 		t.Errorf("level meter = %q", segsText(cells))
 	}
 
@@ -88,5 +91,25 @@ func TestEarlierHint(t *testing.T) {
 	n.shuffle = &shuffle{active: true, start: now, interval: time.Minute}
 	if got := gauges(); strings.Contains(got, "earlier") || !strings.Contains(got, "shuffle") {
 		t.Fatalf("shuffle should replace the hint: %q", got)
+	}
+}
+
+func TestLiveGlow(t *testing.T) {
+	defer useTheme(themes[0])
+	material, _ := findTheme("material")
+	useTheme(material)
+	start := time.UnixMilli(0)
+	if got := liveGlow(start); got != colorLive {
+		t.Errorf("the glow starts lit, got %v", got)
+	}
+	if got := liveGlow(start.Add(glowPeriod / 2)); got != colorDim {
+		t.Errorf("half a period on it is dim, got %v", got)
+	}
+	if got := liveGlow(start.Add(glowPeriod / 4)); got == colorLive || got == colorDim {
+		t.Errorf("in between it blends, got %v", got)
+	}
+	useTheme(themes[0])
+	if got := liveGlow(start.Add(glowPeriod / 4)); got != colorDim && got != colorLive {
+		t.Errorf("the terminal theme blinks rather than blends, got %v", got)
 	}
 }

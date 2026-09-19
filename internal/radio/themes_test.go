@@ -68,6 +68,7 @@ func TestThemeLegibility(t *testing.T) {
 			{"accent vs warn", deltaE(th.accent, th.warn), 15},
 			{"accent vs bright", deltaE(th.accent, th.bright), 15},
 			{"accent vs danger", deltaE(th.accent, th.danger), 15},
+			{"live vs dim", deltaE(th.live, th.dim), 15},
 		}
 		for _, c := range checks {
 			if c.got < c.want && exempt[th.name+"/"+c.rule] == "" {

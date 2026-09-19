@@ -51,7 +51,8 @@ type Application struct {
 	tagsList    *tview.List
 	tagsPane    *listPane
 	tagRows     []string // the tag of each row
-	syncingTags bool     // suppresses the tags list's changed callback
+	tagCounts   map[string]int
+	syncingTags bool // suppresses the tags list's changed callback
 
 	tag               string    // the tag or search shown, empty for none
 	listed            []Station // the stations in the stations list
@@ -165,6 +166,7 @@ func (a *Application) setupPages() {
 	a.tagsList = newList()
 	a.tagsList.SetTitle(" Tags ")
 	a.tagsPane = newListPane(a.tagsList)
+	a.tagsPane.overlay = a.drawTagCounts
 	a.tagsList.SetChangedFunc(func(index int, _, _ string, _ rune) {
 		if a.wide && !a.syncingTags && index < len(a.tagRows) {
 			a.loadTag(a.tagRows[index])

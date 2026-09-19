@@ -17,6 +17,7 @@ against the rules below.
 | bright  | a second hue; the purple when that one is too close to the accent | ΔE 15 from the accent |
 | warn    | the yellow; the orange when the accent is itself yellow | ΔE 15 from the accent |
 | danger  | the error colour, or the red | ΔE 15 from the accent |
+| live    | the green, lighting the Now playing dot, also where the accent is green | ΔE 15 from dim |
 
 ΔE is the CIE76 colour distance; under 15, two colours pass for one at a glance.
 

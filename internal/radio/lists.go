@@ -49,6 +49,7 @@ func (a *Application) showTags() {
 		a.tagRows = append(a.tagRows, tag)
 	}
 
+	a.countTags()
 	add(favoritesTag, '$', favoritesTag)
 	add(allStationsTag, '~', allStationsTag)
 	for i, tag := range a.tags {
