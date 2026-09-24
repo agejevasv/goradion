@@ -72,7 +72,7 @@ pub fn matches(filter: &str, text: &str) -> bool {
 #[derive(Default)]
 pub struct Row {
     pub indent: usize,
-    /// One cell before the label, such as the playing mark.
+    /// One cell in front of the label, such as the playing mark.
     pub mark: Option<Seg>,
     pub label: Vec<Seg>,
     /// Recolours the label, such as the station playing.
@@ -153,8 +153,10 @@ pub fn draw_rows(look: &Look, buf: &mut Buffer, area: Rect, pane: &Pane<'_>, sta
         };
 
         let mut segs = vec![seg(" ".repeat(row.indent), t.text())];
+        // The mark takes the column before the labels, so marked rows start
+        // one cell further in.
         if let Some(mark) = &row.mark {
-            segs.push(mark.clone());
+            draw_segs(buf, x - 1, y, 1, &[restyle(mark.clone())]);
             segs.push(seg(" ", t.text()));
         }
         for s in &row.label {

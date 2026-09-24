@@ -855,7 +855,7 @@ impl App {
                     let name = self.tag.as_ref().map_or("", |t| t.name.as_str());
                     Row { label: vec![seg(format!("{} {name}", g.back), t.accent())], ..Row::default() }
                 }
-                StationRow::Random => Row { indent: 2, label: vec![seg("Random", t.text())], ..Row::default() },
+                StationRow::Random => Row { indent: 1, label: vec![seg("Random", t.text())], ..Row::default() },
                 StationRow::Station(i) => {
                     let s = &self.listed[i];
                     let mut label = vec![seg(s.title.as_str(), t.text())];
