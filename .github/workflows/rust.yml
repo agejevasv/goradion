@@ -68,6 +68,16 @@ jobs:
     - name: Build
       run: cargo build --release --target ${{ matrix.target }}
 
+    - uses: ilammy/msvc-dev-cmd@v1
+      if: runner.os == 'Windows'
+
+    # .cargo/config.toml links the C runtime in; a clean Windows lacks its DLLs.
+    - name: No C runtime DLLs
+      if: runner.os == 'Windows'
+      run: |
+        dumpbin -dependents target/${{ matrix.target }}/release/goradion.exe | tee dlls.txt
+        ! grep -iE 'vcruntime|msvcp|api-ms-win-crt' dlls.txt
+
     - uses: actions/upload-artifact@v4
       with:
         name: goradion-${{ matrix.target }}
