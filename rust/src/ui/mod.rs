@@ -105,6 +105,13 @@ struct LastSearch {
     online: bool,
 }
 
+#[derive(PartialEq)]
+enum RowKey {
+    Back,
+    Random,
+    Url(String),
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum StationRow {
     /// Back to the tags, in the narrow layout.
@@ -349,9 +356,31 @@ impl App {
 
     /// Rebuilds the stations list, keeping the cursor.
     fn reload_stations(&mut self) {
+        self.keeping_cursor(|_| {});
+    }
+
+    /// Runs change, which may add or remove rows, and rebuilds the stations
+    /// list with the cursor on the row it was on. When that row is gone, the
+    /// cursor keeps its place.
+    fn keeping_cursor(&mut self, change: impl FnOnce(&mut App)) {
+        let cursor = self.stations_state.cursor;
+        let keep = self.station_rows().get(cursor).map(|&r| self.row_key(r));
+        change(self);
         self.listed = self.stations_for_tag(self.tag.as_ref());
-        let len = self.station_rows().len();
-        self.stations_state.clamp(len);
+        let rows = self.station_rows();
+        match keep.and_then(|k| rows.iter().position(|&r| self.row_key(r) == k)) {
+            Some(i) => self.stations_state.cursor = i,
+            None => self.stations_state.clamp(rows.len()),
+        }
+    }
+
+    /// What a row shows, which outlives its index.
+    fn row_key(&self, row: StationRow) -> RowKey {
+        match row {
+            StationRow::Back => RowKey::Back,
+            StationRow::Random => RowKey::Random,
+            StationRow::Station(i) => RowKey::Url(self.listed[i].url.clone()),
+        }
     }
 
     fn select_station(&mut self, url: &str) -> bool {
@@ -722,20 +751,26 @@ impl App {
 
     // Drawing
 
-    fn draw(&mut self, buf: &mut Buffer, area: Rect, now: SystemTime) {
-        let wide = area.width >= WIDE_MIN_WIDTH;
-        if wide != self.wide || !self.layout_ready {
-            self.layout_ready = true;
-            self.wide = wide;
-            self.reload_stations();
-            if wide {
-                if self.page == Page::Tags || self.tag.is_none() {
-                    self.preview_tag_at_cursor();
-                } else {
-                    self.sync_tag_cursor();
-                }
+    /// Switches between the narrow and the wide layout for a screen width.
+    fn sync_layout(&mut self, width: u16) {
+        let wide = width >= WIDE_MIN_WIDTH;
+        if wide == self.wide && self.layout_ready {
+            return;
+        }
+        self.layout_ready = true;
+        // The narrow layout has a back row above the stations.
+        self.keeping_cursor(|a| a.wide = wide);
+        if wide {
+            if self.page == Page::Tags || self.tag.is_none() {
+                self.preview_tag_at_cursor();
+            } else {
+                self.sync_tag_cursor();
             }
         }
+    }
+
+    fn draw(&mut self, buf: &mut Buffer, area: Rect, now: SystemTime) {
+        self.sync_layout(area.width);
         if self.look.t.paints_bg() {
             buf.set_style(area, self.look.t.text());
         }

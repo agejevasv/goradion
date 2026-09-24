@@ -129,6 +129,23 @@ mod tests {
         }
     }
 
+    /// The session is restored before the first draw picks the layout; the
+    /// wide one has no back row above the stations.
+    #[test]
+    fn restored_cursor_survives_layout() {
+        let stations = crate::stations::load("").unwrap();
+        let jazz = with_tag(&stations, "Jazz")[2].clone();
+        let (mut a, _dir) = test_app_with(&format!("tag: Jazz\nstation: {}\nautoplay: false\n", jazz.url));
+        let under_cursor = |a: &App| match a.station_rows()[a.stations_state.cursor] {
+            super::super::StationRow::Station(i) => a.listed[i].url.clone(),
+            other => format!("{other:?}"),
+        };
+        for width in [120, 80, 120] {
+            a.sync_layout(width);
+            assert_eq!(under_cursor(&a), jazz.url, "width {width}");
+        }
+    }
+
     #[test]
     fn gone_shows_default() {
         for text in [
