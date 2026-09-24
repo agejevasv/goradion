@@ -1,0 +1,19 @@
+[package]
+name = "goradion"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+audioadapter-buffers = "5.2"
+cpal = "0.18.2"
+csv = "1.4.0"
+rtrb = "0.4.0"
+rubato = "5.0.0"
+rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "aac", "flac", "ogg", "vorbis", "id3v2"] }
+url = "2.5.8"
+webpki-roots = "1.0.9"
+
+[profile.release]
+lto = true
+strip = true
