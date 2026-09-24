@@ -472,6 +472,20 @@ pub const THEMES: &[Theme] = &[
         on_accent: rgb(0x002B36),
     },
     Theme {
+        name: "tomorrow-night",
+        bg: rgb(0x1D1F21),
+        text: rgb(0xC5C8C6),
+        dim: rgb(0x969896),
+        surface: rgb(0x373B41),
+        accent: rgb(0x81A2BE),
+        bright: rgb(0x8ABEB7),
+        song: rgb(0xB294BB),
+        warn: rgb(0xF0C674),
+        danger: rgb(0xCC6666),
+        live: rgb(0xB5BD68),
+        on_accent: rgb(0x1D1F21),
+    },
+    Theme {
         name: "solarized-light",
         bg: rgb(0xFDF6E3),
         text: rgb(0x657B83),
@@ -706,12 +720,113 @@ mod tests {
 
     #[test]
     fn all_themes_ported() {
-        assert_eq!(THEMES.len(), 43);
+        assert_eq!(THEMES.len(), 44);
         assert_eq!(THEMES[0].name, DEFAULT_THEME);
         let mut names: Vec<_> = names().collect();
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), THEMES.len());
+    }
+
+    fn rgb_of(c: Color) -> (f64, f64, f64) {
+        match c {
+            Color::Rgb(r, g, b) => (f64::from(r) / 255.0, f64::from(g) / 255.0, f64::from(b) / 255.0),
+            other => panic!("not an RGB colour: {other:?}"),
+        }
+    }
+
+    /// WCAG 2 relative luminance.
+    fn luminance(c: Color) -> f64 {
+        let lin = |x: f64| if x <= 0.03928 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
+        let (r, g, b) = rgb_of(c);
+        0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    }
+
+    fn contrast(a: Color, b: Color) -> f64 {
+        let (la, lb) = (luminance(a), luminance(b));
+        (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+    }
+
+    /// The CIE76 distance: under 15, two colours pass for one at a glance.
+    fn delta_e(a: Color, b: Color) -> f64 {
+        let lab = |c: Color| {
+            let lin = |x: f64| if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
+            let (r, g, b) = rgb_of(c);
+            let (r, g, b) = (lin(r), lin(g), lin(b));
+            let x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+            let y = r * 0.2126 + g * 0.7152 + b * 0.0722;
+            let z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+            let f = |t: f64| if t > 0.008856 { t.cbrt() } else { 7.787 * t + 16.0 / 116.0 };
+            [116.0 * f(y) - 16.0, 500.0 * (f(x) - f(y)), 200.0 * (f(y) - f(z))]
+        };
+        let (p, q) = (lab(a), lab(b));
+        ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2)).sqrt()
+    }
+
+    fn hue(c: Color) -> f64 {
+        let (r, g, b) = rgb_of(c);
+        let (hi, lo) = (r.max(g).max(b), r.min(g).min(b));
+        let d = hi - lo;
+        if d == 0.0 {
+            return 0.0;
+        }
+        let h = if (hi - r).abs() < f64::EPSILON {
+            ((g - b) / d).rem_euclid(6.0)
+        } else if (hi - g).abs() < f64::EPSILON {
+            (b - r) / d + 2.0
+        } else {
+            (r - g) / d + 4.0
+        };
+        (h * 60.0).rem_euclid(360.0)
+    }
+
+    /// Holds every theme to the rules in docs/themes.md, so a palette colour
+    /// that reads badly in a terminal list is noticed.
+    #[test]
+    fn legibility() {
+        // Where no colour in a theme's palette meets a rule, the closest one is used.
+        let exempt = [
+            "solarized-light/text",
+            "solarized-light/cursor text",
+            "tokyo-night-day/cursor text",
+            "material-sandy-beach/cursor text",
+        ];
+        let mut failures = Vec::new();
+        for th in &THEMES[1..] {
+            let min_accent = if luminance(th.bg) > 0.5 { 3.0 } else { 4.5 };
+            let checks = [
+                ("text", contrast(th.text, th.bg), 4.5),
+                ("cursor text", contrast(th.text, th.surface), 4.0),
+                ("cursor", contrast(th.surface, th.bg), 1.1),
+                ("dim", contrast(th.dim, th.bg), 2.3),
+                ("accent", contrast(th.accent, th.bg), min_accent),
+                ("accent vs warn", delta_e(th.accent, th.warn), 15.0),
+                ("accent vs bright", delta_e(th.accent, th.bright), 15.0),
+                ("accent vs danger", delta_e(th.accent, th.danger), 15.0),
+                ("live vs dim", delta_e(th.live, th.dim), 15.0),
+            ];
+            for (rule, got, want) in checks {
+                if got < want && !exempt.contains(&format!("{}/{rule}", th.name).as_str()) {
+                    failures.push(format!("{}: {rule} is {got:.2}, want {want:.2} or more", th.name));
+                }
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    /// The song playing has a hue of its own, apart from the accent.
+    #[test]
+    fn song_hue() {
+        for th in &THEMES[1..] {
+            let d = (hue(th.song) - hue(th.accent)).abs();
+            let d = d.min(360.0 - d);
+            assert!(d >= 35.0, "{}: song is {d:.0}° from the accent", th.name);
+        }
+    }
+
+    #[test]
+    fn names_fit_the_picker() {
+        assert!(names().all(|n| n.len() <= 20));
     }
 
     #[test]

@@ -64,3 +64,4 @@ against the rules below.
 | one-dark | Atom's [one-dark-syntax](https://github.com/atom/atom/tree/master/packages/one-dark-syntax) `colors.less`, `syntax-variables.less` |
 | night-owl | [sdras/night-owl-vscode-theme](https://github.com/sdras/night-owl-vscode-theme) |
 | solarized-dark, -light | [altercation/solarized](https://github.com/altercation/solarized) |
+| tomorrow-night (Rust version) | [chriskempson/tomorrow-theme](https://github.com/chriskempson/tomorrow-theme) |
