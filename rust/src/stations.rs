@@ -42,14 +42,8 @@ fn parse(r: impl Read) -> Result<Vec<Station>, String> {
         if url.is_empty() {
             continue;
         }
-        let tags = rec
-            .get(2)
-            .unwrap_or("")
-            .split(';')
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(String::from)
-            .collect();
+        let tags =
+            rec.get(2).unwrap_or("").split(';').map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect();
         stations.push(Station { title: rec[0].trim().to_string(), url: url.to_string(), tags });
     }
     Ok(stations)

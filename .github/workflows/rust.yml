@@ -1,0 +1,51 @@
+name: Rust
+
+on:
+  push:
+    branches: [rust-rewrite]
+  pull_request:
+    paths: ['rust/**', 'internal/radio/stations.csv', 'internal/radio/remote.html', '.github/workflows/rust.yml']
+
+defaults:
+  run:
+    shell: bash
+    working-directory: rust
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-latest, target: x86_64-unknown-linux-gnu, test: true}
+          - {os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, test: true}
+          - {os: macos-latest, target: aarch64-apple-darwin, test: true}
+          - {os: macos-latest, target: x86_64-apple-darwin, test: false}
+          - {os: windows-latest, target: x86_64-pc-windows-msvc, test: true}
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Rust
+      run: rustup toolchain install stable --profile minimal --component clippy --target ${{ matrix.target }} && rustup default stable
+
+    - name: ALSA headers
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+    - name: Clippy
+      if: matrix.test
+      run: cargo clippy --release --target ${{ matrix.target }} -- -D warnings
+
+    - name: Test
+      if: matrix.test
+      run: cargo test --release --target ${{ matrix.target }}
+
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: goradion-${{ matrix.target }}
+        path: rust/target/${{ matrix.target }}/release/goradion${{ runner.os == 'Windows' && '.exe' || '' }}

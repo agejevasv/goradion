@@ -82,11 +82,11 @@ pub fn run(
     }
     let mut last_title = String::new();
     let mut report_title = |rev: Option<&MetadataRevision>, on_event: &mut dyn FnMut(Event)| {
-        if let Some(title) = rev.and_then(song_title) {
-            if title != last_title {
-                last_title = title.clone();
-                on_event(Event::Title(title));
-            }
+        if let Some(title) = rev.and_then(song_title)
+            && title != last_title
+        {
+            last_title = title.clone();
+            on_event(Event::Title(title));
         }
     };
     report_title(format.metadata().skip_to_latest(), on_event);

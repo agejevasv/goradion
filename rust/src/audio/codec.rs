@@ -16,7 +16,7 @@ const MAX_OPUS_FRAME: usize = 5760;
 
 pub enum Decoder {
     Symphonia(Box<dyn AudioDecoder>),
-    Opus(Opus),
+    Opus(Box<Opus>),
 }
 
 pub struct Opus {
@@ -49,7 +49,7 @@ impl Decoder {
                 .map_err(|e| DecodeError::Unsupported(format!("Opus: {e}")))?;
             let buf = vec![0.0; MAX_OPUS_FRAME * channels];
             let skip = track.delay.unwrap_or(0) as usize;
-            return Ok(Decoder::Opus(Opus { decoder, channels, skip, buf }));
+            return Ok(Decoder::Opus(Box::new(Opus { decoder, channels, skip, buf })));
         }
         symphonia::default::get_codecs()
             .make_audio_decoder(params, &AudioDecoderOptions::default())

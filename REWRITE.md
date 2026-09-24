@@ -61,6 +61,6 @@ A box is ticked when the behaviour works and its Go tests are ported.
 
 ## Release
 
-- [ ] Linux, macOS, Windows builds in CI
+- [ ] Linux, macOS, Windows builds in CI (`.github/workflows/rust.yml` added, not run yet)
 - [ ] README without mpv
 - [ ] AUR package

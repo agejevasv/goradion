@@ -2,8 +2,8 @@
 //! a sound card, and reports what can't be played.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
 use crate::audio::decode::{self, DecodeError, Event, Sink};
@@ -39,12 +39,10 @@ fn check(url: &str) -> Outcome {
         Err(e) => return Outcome::Dead(e.to_string()),
     };
     let mut format = String::new();
-    let result = decode::run(source, &AtomicBool::new(false), &mut Counter { frames: 0 }, &mut |e| {
-        match e {
-            Event::Format(f) => format = f,
-            Event::Title(t) => log!("{url}: title {t:?}"),
-            Event::Bitrate(b) => log!("{url}: {b} kbps"),
-        }
+    let result = decode::run(source, &AtomicBool::new(false), &mut Counter { frames: 0 }, &mut |e| match e {
+        Event::Format(f) => format = f,
+        Event::Title(t) => log!("{url}: title {t:?}"),
+        Event::Bitrate(b) => log!("{url}: {b} kbps"),
     });
     match result {
         Ok(()) => {

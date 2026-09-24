@@ -127,7 +127,8 @@ impl App {
         s.results = found.into_iter().map(|station| Found { station, meta: String::new() }).collect();
         s.results_query = s.input.clone();
         s.list = ListState::default();
-        s.status = (s.results.is_empty() && !s.input.trim().is_empty()).then(|| ("No stations match".to_string(), t.dim));
+        s.status =
+            (s.results.is_empty() && !s.input.trim().is_empty()).then(|| ("No stations match".to_string(), t.dim));
     }
 
     fn start_online_search(&mut self) {
@@ -328,18 +329,20 @@ impl App {
                 seg(format!(" {label} "), t.text())
             }
         };
-        let title = vec![seg(" Station Search:", t.text()), badge("Local", !s.online), badge("Online", s.online), seg(" ", t.text())];
+        let title = vec![
+            seg(" Station Search:", t.text()),
+            badge("Local", !s.online),
+            badge("Online", s.online),
+            seg(" ", t.text()),
+        ];
         super::draw_box(&self.look, buf, area, t.dim(), &title);
 
         let (x, y, w) = (area.x + 3, area.y + 1, area.width as usize - 5);
         let label = seg("Search: ", t.fg(mode).add_modifier(Modifier::BOLD));
         let used = draw_segs(buf, x, y, w, &[label]);
         let caret_style = t.text().add_modifier(Modifier::REVERSED);
-        let (text, text_style) = if s.input.is_empty() {
-            ("station name or tag".to_string(), t.dim())
-        } else {
-            (s.input.clone(), t.text())
-        };
+        let (text, text_style) =
+            if s.input.is_empty() { ("station name or tag".to_string(), t.dim()) } else { (s.input.clone(), t.text()) };
         let mut segs = Vec::new();
         for (i, c) in text.chars().enumerate() {
             let style = if i == s.caret && !s.focus_results { caret_style } else { text_style };
@@ -370,7 +373,8 @@ impl App {
             .collect();
         let empty = s.status.as_ref().map(|(text, color)| seg(text.as_str(), t.fg(*color)));
         let pane = Pane { title: Vec::new(), focused: s.focus_results, rows: &rows, empty };
-        let rows_area = Rect { x: area.x + 1, y: area.y + 3, width: area.width - 2, height: area.height.saturating_sub(4) };
+        let rows_area =
+            Rect { x: area.x + 1, y: area.y + 3, width: area.width - 2, height: area.height.saturating_sub(4) };
         list::draw_rows(&self.look, buf, rows_area, &pane, &mut s.list);
     }
 
@@ -391,7 +395,11 @@ mod tests {
     use crate::config::Config;
 
     fn st(title: &str, tags: &[&str]) -> Station {
-        Station { title: title.into(), url: format!("http://{title}"), tags: tags.iter().map(|t| t.to_string()).collect() }
+        Station {
+            title: title.into(),
+            url: format!("http://{title}"),
+            tags: tags.iter().map(|t| t.to_string()).collect(),
+        }
     }
 
     #[test]

@@ -22,10 +22,7 @@ pub struct Response {
 
 impl Response {
     pub fn header(&self, name: &str) -> Option<&str> {
-        self.headers
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.as_str())
+        self.headers.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
     }
 }
 
@@ -33,11 +30,11 @@ pub fn get(url: &str, extra_headers: &[(&str, &str)]) -> io::Result<Response> {
     let mut url = Url::parse(url).map_err(invalid)?;
     for _ in 0..=MAX_REDIRECTS {
         let (status, resp) = request(&url, extra_headers)?;
-        if (300..400).contains(&status) {
-            if let Some(location) = resp.header("location") {
-                url = url.join(location).map_err(invalid)?;
-                continue;
-            }
+        if (300..400).contains(&status)
+            && let Some(location) = resp.header("location")
+        {
+            url = url.join(location).map_err(invalid)?;
+            continue;
         }
         if !(200..300).contains(&status) {
             return Err(io::Error::other(format!("HTTP {status}")));
@@ -98,9 +95,7 @@ fn request(url: &Url, extra_headers: &[(&str, &str)]) -> io::Result<(u16, Respon
     }
 
     let mut resp = Response { url: url.clone(), headers, body: Box::new(io::empty()) };
-    let chunked = resp
-        .header("transfer-encoding")
-        .is_some_and(|v| v.to_ascii_lowercase().contains("chunked"));
+    let chunked = resp.header("transfer-encoding").is_some_and(|v| v.to_ascii_lowercase().contains("chunked"));
     let length = resp.header("content-length").and_then(|v| v.parse::<u64>().ok());
     resp.body = if chunked {
         Box::new(BufReader::new(Chunked { inner: reader, left: 0, done: false }))
@@ -150,10 +145,7 @@ fn parse_status(line: &str) -> io::Result<u16> {
     if !proto.starts_with("HTTP/") && proto != "ICY" {
         return Err(invalid(format!("not an HTTP response: {line:?}")));
     }
-    parts
-        .next()
-        .and_then(|s| s.parse().ok())
-        .ok_or_else(|| invalid(format!("bad status line: {line:?}")))
+    parts.next().and_then(|s| s.parse().ok()).ok_or_else(|| invalid(format!("bad status line: {line:?}")))
 }
 
 fn read_line(r: &mut impl BufRead) -> io::Result<String> {

@@ -3,9 +3,9 @@ mod bookmarks;
 mod check;
 mod config;
 mod files;
+mod log;
 mod radiobrowser;
 mod remote;
-mod log;
 mod stations;
 mod ui;
 
@@ -121,7 +121,9 @@ fn play_url(url: &str) -> ExitCode {
         let level = player.level().map_or(0.0, |(l, _)| l);
         let bars: String = player
             .spectrum()
-            .map(|(b, _)| b.iter().map(|&v| [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'][(v * 8.0).round() as usize]).collect())
+            .map(|(b, _)| {
+                b.iter().map(|&v| [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'][(v * 8.0).round() as usize]).collect()
+            })
             .unwrap_or_default();
         eprint!(
             "\r\x1b[K{} | {} | {} kbps | {} | level {:.2} {bars}",

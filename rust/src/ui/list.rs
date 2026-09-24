@@ -159,10 +159,10 @@ pub fn draw_rows(look: &Look, buf: &mut Buffer, area: Rect, pane: &Pane<'_>, sta
         }
         for s in &row.label {
             let mut s = s.clone();
-            if let Some(tint) = row.tint {
-                if s.style.fg == Some(t.text) {
-                    s.style = s.style.fg(tint);
-                }
+            if let Some(tint) = row.tint
+                && s.style.fg == Some(t.text)
+            {
+                s.style = s.style.fg(tint);
             }
             segs.push(s);
         }
@@ -172,7 +172,11 @@ pub fn draw_rows(look: &Look, buf: &mut Buffer, area: Rect, pane: &Pane<'_>, sta
         let aside_w = width(&row.aside);
         if aside_w > 0 && label_end + 2 + aside_w <= w {
             let aside = restyle(seg(row.aside.as_str(), t.dim()));
-            let aside = if bar && reversed_cursor { aside } else { seg(aside.text, aside.style.fg(t.dim).remove_modifier(Modifier::BOLD)) };
+            let aside = if bar && reversed_cursor {
+                aside
+            } else {
+                seg(aside.text, aside.style.fg(t.dim).remove_modifier(Modifier::BOLD))
+            };
             draw_segs(buf, x + (w - aside_w) as u16, y, aside_w, &[aside]);
         }
 

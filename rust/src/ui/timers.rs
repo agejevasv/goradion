@@ -47,7 +47,10 @@ enum Phase {
     Waiting,
     FadingOut(Fade),
     /// The station picked is tuning in, silent.
-    Tuning { url: String, since: Instant },
+    Tuning {
+        url: String,
+        since: Instant,
+    },
     FadingIn(Fade),
 }
 

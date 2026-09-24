@@ -112,7 +112,13 @@ pub struct Queue {
 /// Holds the stream until stop, rebuilding it on the default device when the
 /// device goes away, such as Bluetooth headphones switched off. The queue stays,
 /// so playback goes on where it was.
-fn keep_playing(stream: &mut Option<cpal::Stream>, rate: u32, shared: &Arc<Shared>, lost: &Arc<AtomicBool>, stop: &mpsc::Receiver<()>) {
+fn keep_playing(
+    stream: &mut Option<cpal::Stream>,
+    rate: u32,
+    shared: &Arc<Shared>,
+    lost: &Arc<AtomicBool>,
+    stop: &mpsc::Receiver<()>,
+) {
     loop {
         match stop.recv_timeout(Duration::from_millis(500)) {
             Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -227,5 +233,5 @@ where
             log!("audio output: {e}; reopening");
         }
     };
-    device.build_output_stream(config.clone(), callback, on_error, None).map_err(|e| e.to_string())
+    device.build_output_stream(*config, callback, on_error, None).map_err(|e| e.to_string())
 }

@@ -240,9 +240,8 @@ fn parse_yaml(text: &str) -> Result<Vec<Entry>, String> {
         let colon = find_colon(line).ok_or_else(|| err("expected key: value"))?;
         let key = unquote(line[..colon].trim()).map_err(|e| err(&e))?;
         let rest = line[colon + 1..].trim();
-        let value = if rest.is_empty() || rest == "~" || rest == "null" {
-            None
-        } else if matches!(rest.chars().next(), Some('|' | '>')) {
+        let block_scalar = matches!(rest.chars().next(), Some('|' | '>'));
+        let value = if rest.is_empty() || rest == "~" || rest == "null" || block_scalar {
             None
         } else if rest.starts_with('[') || rest.starts_with('{') {
             if !balanced(rest) {
@@ -338,10 +337,9 @@ fn unquote(s: &str) -> Result<String, String> {
 /// quoted.
 fn quote(s: &str) -> String {
     let special_start = s.starts_with(|c: char| "-?:,[]{}#&*!|>'\"%@`".contains(c) || c.is_whitespace());
-    let ambiguous = matches!(
-        s.to_ascii_lowercase().as_str(),
-        "" | "~" | "null" | "true" | "false" | "yes" | "no" | "on" | "off"
-    ) || s.parse::<f64>().is_ok();
+    let ambiguous =
+        matches!(s.to_ascii_lowercase().as_str(), "" | "~" | "null" | "true" | "false" | "yes" | "no" | "on" | "off")
+            || s.parse::<f64>().is_ok();
     let plain = !special_start
         && !ambiguous
         && !s.ends_with(char::is_whitespace)

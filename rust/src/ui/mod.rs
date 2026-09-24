@@ -8,9 +8,9 @@ mod remote;
 mod search;
 mod session;
 mod text;
+pub mod theme;
 mod theme_modal;
 mod timers;
-pub mod theme;
 
 use std::collections::HashMap;
 use std::io;
@@ -20,8 +20,8 @@ use rand::RngExt;
 use ratatui::DefaultTerminal;
 use ratatui::buffer::Buffer;
 use ratatui::crossterm::event::{
-    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
-    MouseButton, MouseEvent, MouseEventKind,
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton,
+    MouseEvent, MouseEventKind,
 };
 use ratatui::crossterm::execute;
 use ratatui::layout::{Position, Rect};
@@ -216,12 +216,12 @@ impl App {
     }
 
     pub fn run(mut self) -> io::Result<()> {
-        if self.remote_settings.autostart {
-            if let Err(e) = self.start_remote() {
-                // The window retries and shows the error.
-                crate::log!("remote: {e}");
-                self.toggle_remote_modal();
-            }
+        if self.remote_settings.autostart
+            && let Err(e) = self.start_remote()
+        {
+            // The window retries and shows the error.
+            crate::log!("remote: {e}");
+            self.toggle_remote_modal();
         }
         let mut terminal = ratatui::init();
         execute!(io::stdout(), EnableMouseCapture)?;
@@ -358,10 +358,8 @@ impl App {
         if url.is_empty() {
             return false;
         }
-        let found = self
-            .station_rows()
-            .iter()
-            .position(|r| matches!(r, StationRow::Station(i) if self.listed[*i].url == url));
+        let found =
+            self.station_rows().iter().position(|r| matches!(r, StationRow::Station(i) if self.listed[*i].url == url));
         if let Some(i) = found {
             self.stations_state.cursor = i;
         }
@@ -382,10 +380,10 @@ impl App {
     }
 
     fn preview_tag_at_cursor(&mut self) {
-        if let Some(tag) = self.tag_rows().get(self.tags_state.cursor).cloned() {
-            if self.tag.as_ref() != Some(&tag) {
-                self.load_tag(tag);
-            }
+        if let Some(tag) = self.tag_rows().get(self.tags_state.cursor).cloned()
+            && self.tag.as_ref() != Some(&tag)
+        {
+            self.load_tag(tag);
         }
     }
 
@@ -469,9 +467,8 @@ impl App {
             _ => None,
         };
         let url = self.player.snapshot().url;
-        let target = under_cursor.or_else(|| {
-            self.playing.as_ref().filter(|(s, _)| !url.is_empty() && s.url == url).map(|(s, _)| s.clone())
-        });
+        let target = under_cursor
+            .or_else(|| self.playing.as_ref().filter(|(s, _)| !url.is_empty() && s.url == url).map(|(s, _)| s.clone()));
         if let Some(s) = target {
             self.bookmarks.toggle(&s);
             if self.tag.as_ref().is_some_and(|t| t.name == BOOKMARKS_TAG) {
@@ -847,7 +844,8 @@ impl App {
             })
             .collect();
 
-        let title = vec![seg(" ", t.text()), seg(g.notes, t.fg(t.song)), seg(format!(" {} ", self.stations_title()), t.text())];
+        let title =
+            vec![seg(" ", t.text()), seg(g.notes, t.fg(t.song)), seg(format!(" {} ", self.stations_title()), t.text())];
         let empty = if !self.stations_state.filter.is_empty() {
             "No match".to_string()
         } else if self.tag.as_ref().is_some_and(|t| t.name == BOOKMARKS_TAG) {
@@ -952,7 +950,13 @@ pub fn draw_box(look: &Look, buf: &mut Buffer, area: Rect, style: Style, title: 
     let inner = area.width as usize - 2;
     let line = h.repeat(inner);
     draw_segs(buf, area.x, area.y, area.width as usize, &[seg(tl, style), seg(line.as_str(), style), seg(tr, style)]);
-    draw_segs(buf, area.x, area.bottom() - 1, area.width as usize, &[seg(bl, style), seg(line.as_str(), style), seg(br, style)]);
+    draw_segs(
+        buf,
+        area.x,
+        area.bottom() - 1,
+        area.width as usize,
+        &[seg(bl, style), seg(line.as_str(), style), seg(br, style)],
+    );
     for y in area.y + 1..area.bottom() - 1 {
         draw_segs(buf, area.x, y, 1, &[seg(v, style)]);
         draw_segs(buf, area.right() - 1, y, 1, &[seg(v, style)]);
@@ -970,8 +974,11 @@ pub(crate) mod tests {
     pub fn test_app_with(config_text: &str) -> (App, PathBuf) {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static N: AtomicUsize = AtomicUsize::new(0);
-        let dir = std::env::temp_dir()
-            .join(format!("goradion-app-{}-{}", std::process::id(), N.fetch_add(1, Ordering::Relaxed)));
+        let dir = std::env::temp_dir().join(format!(
+            "goradion-app-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         if !config_text.is_empty() {

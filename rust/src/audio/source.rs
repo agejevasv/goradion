@@ -41,9 +41,7 @@ pub fn open(url: &str, on_title: TitleFn) -> Result<Source, OpenError> {
     let mut url = url.to_string();
     for _ in 0..MAX_PLAYLIST_DEPTH {
         let mut resp = http::get(&url, &[("Icy-MetaData", "1")])?;
-        let mime = resp
-            .header("content-type")
-            .map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase());
+        let mime = resp.header("content-type").map(|v| v.split(';').next().unwrap_or("").trim().to_ascii_lowercase());
 
         if is_playlist(mime.as_deref(), resp.body.fill_buf()?) {
             let mut text = String::new();
@@ -91,10 +89,11 @@ fn is_playlist(mime: Option<&str>, head: &[u8]) -> bool {
 fn first_entry(text: &str) -> Option<String> {
     let lines = text.lines().map(str::trim);
     for line in lines.clone() {
-        if let Some((key, value)) = line.split_once('=') {
-            if key.to_ascii_lowercase().starts_with("file") && !value.trim().is_empty() {
-                return Some(value.trim().to_string());
-            }
+        if let Some((key, value)) = line.split_once('=')
+            && key.to_ascii_lowercase().starts_with("file")
+            && !value.trim().is_empty()
+        {
+            return Some(value.trim().to_string());
         }
     }
     lines

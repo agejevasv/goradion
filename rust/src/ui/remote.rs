@@ -33,8 +33,9 @@ impl App {
         if self.remote.is_some() {
             return Ok(());
         }
-        let (server, calls) = Server::start(self.remote_settings.port, self.remote_settings.key.as_deref(), self.stations.clone())
-            .map_err(|e| e.to_string())?;
+        let (server, calls) =
+            Server::start(self.remote_settings.port, self.remote_settings.key.as_deref(), self.stations.clone())
+                .map_err(|e| e.to_string())?;
         self.remote = Some((server, calls));
         Ok(())
     }
@@ -88,11 +89,9 @@ impl App {
             Action::Bookmark => {
                 let listed = self.listed.iter().find(|s| !q.url.is_empty() && s.url == q.url).cloned();
                 let playing_url = self.player.snapshot().url;
-                let playing = self
-                    .playing
-                    .as_ref()
-                    .map(|(s, _)| s.clone())
-                    .filter(|s| !playing_url.is_empty() && s.url == playing_url && (q.url.is_empty() || q.url == s.url));
+                let playing = self.playing.as_ref().map(|(s, _)| s.clone()).filter(|s| {
+                    !playing_url.is_empty() && s.url == playing_url && (q.url.is_empty() || q.url == s.url)
+                });
                 let station = listed.or(playing).ok_or_else(|| ApiError::not_found("station not found"))?;
                 self.bookmarks.toggle(&station);
                 self.reload_stations();
@@ -416,7 +415,9 @@ mod tests {
         assert_eq!(call("POST", "/api/bookmark", r#"{"url":"http://nope"}"#).0, 404);
         assert_eq!(st.tags[0].kind, "bookmarks");
         let (code, st) = call("POST", "/api/tag", r#"{"tag":"Bookmarks"}"#);
-        assert!(code == 200 && st.stations.len() == 2 && st.stations[0].title == target.title && st.stations[0].playing);
+        assert!(
+            code == 200 && st.stations.len() == 2 && st.stations[0].title == target.title && st.stations[0].playing
+        );
         let (code, st) = call("POST", "/api/bookmark", &format!(r#"{{"url":"{}"}}"#, st.stations[1].url));
         assert!(code == 200 && st.stations.len() == 1);
 
@@ -447,7 +448,8 @@ mod tests {
         let results = sr["results"].as_array().unwrap();
         assert!(!results.is_empty() && sr["online"] == false);
         let url = results[0]["url"].as_str().unwrap();
-        let (code, st) = call("POST", "/api/search/select", &format!(r#"{{"query":"soma jazz","online":false,"url":"{url}"}}"#));
+        let (code, st) =
+            call("POST", "/api/search/select", &format!(r#"{{"query":"soma jazz","online":false,"url":"{url}"}}"#));
         assert!(code == 200 && st.tag == "soma jazz" && st.player.url == url && st.stations.len() == results.len());
         let stale = format!(r#"{{"query":"other","online":false,"url":"{url}"}}"#);
         assert_eq!(call("POST", "/api/search/select", &stale).0, 400);
@@ -468,7 +470,11 @@ mod tests {
     #[test]
     fn startup_key() {
         for (key, good, bad) in [
-            (Some("Correct Horse [battery] staple"), vec!["Correct Horse [battery] staple", "correct horse [battery] staple"], vec!["", "correct"]),
+            (
+                Some("Correct Horse [battery] staple"),
+                vec!["Correct Horse [battery] staple", "correct horse [battery] staple"],
+                vec!["", "correct"],
+            ),
             (Some(""), vec!["", "anything"], vec![]),
         ] {
             let (server, _rx) = Server::start(0, key, Vec::new()).unwrap();

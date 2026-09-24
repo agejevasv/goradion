@@ -95,7 +95,8 @@ impl Card {
             self.flash(now);
         }
         let prev = &self.info;
-        if inf.url != prev.url || inf.station != prev.station || matches!(inf.state, State::Buffering | State::Stopped) {
+        if inf.url != prev.url || inf.station != prev.station || matches!(inf.state, State::Buffering | State::Stopped)
+        {
             self.playing_since = None;
         }
         if inf.song != prev.song {
@@ -186,7 +187,9 @@ impl Card {
 
         let (title, mut left) = match st {
             State::Idle => (seg(" Now playing ", t.dim()), vec![seg("Nothing playing", t.text())]),
-            State::Stopped => (seg(" Stopped ", t.dim()), vec![seg(format!("{} ", g.stop), t.dim()), seg(station, t.text())]),
+            State::Stopped => {
+                (seg(" Stopped ", t.dim()), vec![seg(format!("{} ", g.stop), t.dim()), seg(station, t.text())])
+            }
             State::Buffering => (
                 seg(" Tuning in ", t.fg(t.warn)),
                 vec![seg(format!("{} ", g.spinner_frame(now)), t.fg(t.warn)), seg(station, strong)],
@@ -300,7 +303,8 @@ impl Card {
         row.push(seg(format!(" {}%", self.info.volume), pct));
 
         if let Some((remaining, interval)) = extras.shuffle {
-            let label = if look.g.shuffle.is_empty() { "shuffle ".to_string() } else { format!("{} shuffle ", look.g.shuffle) };
+            let label =
+                if look.g.shuffle.is_empty() { "shuffle ".to_string() } else { format!("{} shuffle ", look.g.shuffle) };
             let time_text = format!(" {}", clock(remaining + Duration::from_millis(999)));
             let label_w = text::width(&label);
             let shuffle_gauge = half.saturating_sub(label_w + time_text.len()).clamp(4, 30);

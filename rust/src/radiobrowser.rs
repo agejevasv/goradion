@@ -78,7 +78,11 @@ fn parse(rows: Vec<Row>) -> Vec<OnlineStation> {
         }
         seen.insert(url.clone());
         let tags = r.tags.split(',').map(str::trim).filter(|t| !t.is_empty()).map(String::from).collect();
-        out.push(OnlineStation { station: Station { title, url, tags }, country_code: r.countrycode, bitrate: r.bitrate });
+        out.push(OnlineStation {
+            station: Station { title, url, tags },
+            country_code: r.countrycode,
+            bitrate: r.bitrate,
+        });
     }
     out
 }
@@ -109,7 +113,14 @@ mod tests {
     use super::*;
 
     fn row(name: &str, url: &str, resolved: &str, tags: &str, bitrate: u32) -> Row {
-        Row { name: name.into(), url: url.into(), url_resolved: resolved.into(), tags: tags.into(), bitrate, ..Row::default() }
+        Row {
+            name: name.into(),
+            url: url.into(),
+            url_resolved: resolved.into(),
+            tags: tags.into(),
+            bitrate,
+            ..Row::default()
+        }
     }
 
     #[test]

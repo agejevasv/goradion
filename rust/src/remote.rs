@@ -167,12 +167,8 @@ impl Server {
         let port = http.server_addr().to_ip().map_or(port, |a| a.port());
         let token = key.map_or_else(|| new_token(TOKEN_LENGTH), |k| k.trim().to_string());
         let (tx, rx) = mpsc::channel();
-        let shared = Arc::new(Shared {
-            token,
-            stations,
-            calls: Mutex::new(tx),
-            last_search: Mutex::new(LastSearch::default()),
-        });
+        let shared =
+            Arc::new(Shared { token, stations, calls: Mutex::new(tx), last_search: Mutex::new(LastSearch::default()) });
         let http = Arc::new(http);
         let (serve_http, serve_shared) = (http.clone(), shared.clone());
         let thread = thread::Builder::new().name("remote".into()).spawn(move || {
@@ -307,7 +303,12 @@ fn search(shared: &Shared, query: &HashMap<String, String>) -> Response<std::io:
                 .into_iter()
                 .map(|f| {
                     let meta = crate::ui::online_meta(&f);
-                    let view = StationView { title: f.station.title.clone(), url: f.station.url.clone(), meta, ..StationView::default() };
+                    let view = StationView {
+                        title: f.station.title.clone(),
+                        url: f.station.url.clone(),
+                        meta,
+                        ..StationView::default()
+                    };
                     (f.station, view)
                 })
                 .unzip(),

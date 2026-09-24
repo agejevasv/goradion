@@ -290,8 +290,7 @@ impl Inner {
 
     fn play_once(self: &Arc<Self>, id: u64, url: &str, cancel: &AtomicBool) -> Result<(), PlayError> {
         let titles = self.clone();
-        let source = source::open(url, Box::new(move |title| titles.set_song(id, title)))
-            .map_err(PlayError::Open)?;
+        let source = source::open(url, Box::new(move |title| titles.set_song(id, title))).map_err(PlayError::Open)?;
         if cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
@@ -388,10 +387,10 @@ impl<'a> QueueSink<'a> {
             samples = &samples[written..];
             self.written += written;
         }
-        if self.written >= self.queue.prebuffer {
-            if let Some(f) = self.on_start.take() {
-                f();
-            }
+        if self.written >= self.queue.prebuffer
+            && let Some(f) = self.on_start.take()
+        {
+            f();
         }
         true
     }
@@ -441,11 +440,7 @@ impl<'a> QueueSink<'a> {
 
 impl Sink for QueueSink<'_> {
     fn write(&mut self, frames: &[f32], rate: u32) -> bool {
-        if rate == self.out_rate {
-            self.push(frames)
-        } else {
-            self.resample(frames, rate)
-        }
+        if rate == self.out_rate { self.push(frames) } else { self.resample(frames, rate) }
     }
 }
 
