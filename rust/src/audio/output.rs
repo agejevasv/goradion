@@ -24,7 +24,7 @@ const GAIN_SMOOTHING: f32 = 0.001;
 pub struct Output {
     pub rate: u32,
     shared: Arc<Shared>,
-    _stop: mpsc::Sender<()>,
+    _stop: Option<mpsc::Sender<()>>,
 }
 
 struct Shared {
@@ -61,7 +61,19 @@ impl Output {
             })
             .map_err(|e| e.to_string())?;
         let rate = ready_rx.recv().map_err(|e| e.to_string())??;
-        Ok(Output { rate, shared, _stop: stop_tx })
+        Ok(Output { rate, shared, _stop: Some(stop_tx) })
+    }
+
+    /// An output without a device, whose queues are never played.
+    #[cfg(test)]
+    pub fn null() -> Output {
+        let shared = Arc::new(Shared {
+            consumer: Mutex::new(None),
+            primed: AtomicBool::new(false),
+            gain: AtomicU32::new(0f32.to_bits()),
+            readings: Readings::default(),
+        });
+        Output { rate: 48000, shared, _stop: None }
     }
 
     /// Starts a new queue, dropping whatever the previous one held.

@@ -21,11 +21,11 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] Decode MP3, AAC-LC, FLAC, Vorbis
 - [ ] Decode Opus (libopus, static)
 - [x] HE-AAC plays (core only until SBR exists)
-- [ ] Output via cpal, resampled to the device rate (works on ALSA null device; needs a real sound card test)
+- [x] Output via cpal, resampled to the device rate (PulseAudio null sink: real time, ~2% CPU)
 - [ ] States: idle, buffering, playing, stopped, failed (retry with backoff 1s…30s), unsupported (no retry), no device
 - [ ] Volume 0–100 (mpv's cubic curve), fades
 - [x] Bitrate
-- [ ] Song history (20)
+- [x] Song history (20)
 - [x] Level meter (RMS, -32 dBFS floor)
 - [x] Spectrum: 12 bands, 40 Hz – 12 kHz, tilt and floor as in Go
 - [ ] Recover from device loss (Bluetooth headphones off)
@@ -35,24 +35,26 @@ A box is ticked when the behaviour works and its Go tests are ported.
 ## App
 
 - [x] Stations CSV: built-in, file, URL (`-s`)
-- [ ] Tags list with counts, bookmarks row, last search row
-- [ ] Station list, cursor bar, playing and bookmark marks
-- [ ] Type-to-filter replaces a–z/A–Z shortcuts; `j`/`k`
-- [ ] `1`–`9` play the first nine bookmarks
-- [ ] Wide layout (tags and stations side by side), `Tab`
-- [ ] Now playing card: station, song, previous song, status, spinner, live glow
-- [ ] Gauges: volume, level meter, spectrum; mouse on volume gauge
-- [ ] Mouse: click to play, wheel scrolls
+- [x] Tags list with counts, bookmarks row
+- [ ] Last search row
+- [x] Station list, cursor bar, playing and bookmark marks
+- [x] Type-to-filter replaces a–z/A–Z shortcuts (no `j`/`k`: letters filter)
+- [x] `1`–`9` play the first nine bookmarks
+- [x] Wide layout (tags and stations side by side), `Tab`
+- [x] Now playing card: station, song, previous song, status, spinner, live glow
+- [x] Gauges: volume, spectrum
+- [ ] Mouse on the volume gauge (coded, not tried)
+- [ ] Mouse: click to play, wheel scrolls (coded, not tried)
 - [ ] Random station (`*`), shuffle (`Ctrl+R`, `Alt+1`–`9`)
 - [ ] Sleep timer (`Ctrl+Z`), fade out, click countdown to cancel
-- [ ] Bookmarks (`Ctrl+B`), saved to file
+- [x] Bookmarks (`Ctrl+B`), saved to file
 - [ ] Search own stations and radio-browser (`:`, `Ctrl+F`, `Ctrl+S`)
-- [ ] Help (`?`), hint bar
+- [x] Help (`?`), hint bar
 - [ ] Themes (`Ctrl+T`), terminal background via OSC 11
-- [ ] `--ascii` glyphs, locale detection
-- [ ] `--no-vu`
-- [ ] Config YAML: defaults, save `volume`/`tag`/`station`/`theme` keeping layout and comments
-- [ ] Session restore, `autoplay`
+- [x] `--ascii` glyphs, locale detection
+- [x] `--no-vu`
+- [x] Config YAML: defaults, save `volume`/`tag`/`station`/`theme` keeping layout and comments
+- [x] Session restore, `autoplay`
 - [ ] Remote: web server, access code, QR modal (`Ctrl+P`), `-r [key]`, `-p`, same API and page
 - [x] Debug log (`-d`), version (`-v`)
 

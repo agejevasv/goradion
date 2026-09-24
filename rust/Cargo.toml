@@ -7,10 +7,16 @@ edition = "2024"
 audioadapter-buffers = "5.2"
 cpal = "0.18.2"
 csv = "1.4.0"
+rand = "0.10.3"
+ratatui = "0.30.2"
 rtrb = "0.4.0"
 rubato = "5.0.0"
 rustls = { version = "0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "aac", "flac", "ogg", "vorbis", "id3v2"] }
+unicode-segmentation = "1.13.3"
+unicode-width = "0.2.2"
 url = "2.5.8"
 webpki-roots = "1.0.9"
 

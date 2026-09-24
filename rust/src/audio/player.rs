@@ -88,6 +88,7 @@ pub struct Player {
 
 struct Inner {
     output: Output,
+    online: bool,
     state: Mutex<PlayerState>,
     listeners: Mutex<Vec<SyncSender<()>>>,
 }
@@ -105,16 +106,27 @@ struct Session {
 
 impl Player {
     pub fn new() -> Result<Player, String> {
-        let output = Output::open()?;
+        Ok(Self::with_output(Output::open()?, true))
+    }
+
+    /// A player that only tracks state, never touching the network or a
+    /// sound card.
+    #[cfg(test)]
+    pub fn offline() -> Player {
+        Self::with_output(Output::null(), false)
+    }
+
+    fn with_output(output: Output, online: bool) -> Player {
         output.set_volume(DEFAULT_VOLUME);
         let info = Info { volume: DEFAULT_VOLUME, ..Info::default() };
-        Ok(Player {
+        Player {
             inner: Arc::new(Inner {
                 output,
+                online,
                 state: Mutex::new(PlayerState { info, session: None }),
                 listeners: Mutex::new(Vec::new()),
             }),
-        })
+        }
     }
 
     pub fn snapshot(&self) -> Info {
@@ -155,6 +167,9 @@ impl Player {
         self.inner.notify();
 
         log!("loading {url}");
+        if !self.inner.online {
+            return;
+        }
         let inner = self.inner.clone();
         let url = url.to_string();
         thread::Builder::new()

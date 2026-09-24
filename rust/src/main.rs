@@ -1,15 +1,20 @@
 mod audio;
+mod bookmarks;
 mod check;
+mod config;
+mod files;
 mod log;
 mod stations;
+mod ui;
 
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: goradion [-s stations.csv|URL] [-c] [-d] [-v] [--play URL]";
+const USAGE: &str = "usage: goradion [-s stations.csv|URL] [-c] [-d] [-v] [--ascii] [--no-vu] [--play URL]";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let (mut source, mut check, mut play) = (String::new(), false, None);
+    let (mut ascii, mut vu) = (ui::glyphs::detect_ascii(), true);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "-v" => {
@@ -25,6 +30,8 @@ fn main() -> ExitCode {
             "-c" => check = true,
             "-s" => source = args.next().unwrap_or_default(),
             "--play" => play = args.next(),
+            "-ascii" | "--ascii" => ascii = true,
+            "-no-vu" | "--no-vu" => vu = false,
             _ => {
                 eprintln!("{USAGE}");
                 return ExitCode::FAILURE;
@@ -47,8 +54,29 @@ fn main() -> ExitCode {
         check::run(&stations);
         return ExitCode::SUCCESS;
     }
-    eprintln!("the TUI is not ported yet; try -c or --play URL");
-    ExitCode::FAILURE
+    if stations.is_empty() {
+        println!("Stations list is empty, exiting.");
+        return ExitCode::SUCCESS;
+    }
+
+    let player = match audio::Player::new() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let bookmarks = bookmarks::Bookmarks::load(&stations);
+    let config = config::Config::load();
+    let opts = ui::Options { ascii, vu };
+    let app = ui::App::new(player.clone(), stations, bookmarks, config, &opts);
+    let result = app.run();
+    player.stop();
+    if let Err(e) = result {
+        eprintln!("{e}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
 }
 
 /// Plays one URL and prints what the player reports, until Ctrl+C. A stand-in
