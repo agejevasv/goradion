@@ -25,6 +25,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] Output via cpal, resampled to the device rate (PulseAudio null sink: real time, ~2% CPU)
 - [x] States: idle, buffering, playing, stopped, failed (retry with backoff 1s…30s), unsupported (no retry)
 - [x] Volume 0–100 (mpv's cubic curve), fades
+- [x] Station switch: the old station plays on until the new one has audio, then a 1 s crossfade; shuffle uses it
 - [x] Bitrate
 - [x] Song history (20)
 - [x] Level meter (RMS, -32 dBFS floor)

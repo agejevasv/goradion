@@ -1,5 +1,5 @@
-//! The sound card side: a cpal stream fed from a ring buffer that each
-//! station session replaces.
+//! The sound card side: a cpal stream fed by the mixer, which plays the
+//! queues that station sessions fill.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
@@ -9,16 +9,15 @@ use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{ErrorKind, FromSample, SampleFormat, SizedSample, StreamConfig};
-use rtrb::{Consumer, Producer, RingBuffer};
+use rtrb::{Producer, RingBuffer};
 
 use super::meter::{Meter, Readings};
+use super::mixer::{Mixer, PREBUFFER_SECS};
 use crate::log;
 
 /// Seconds of decoded audio a session may queue. Servers send a burst on
 /// connect; keeping it bridges network hiccups.
 const QUEUE_SECS: usize = 10;
-/// Seconds queued before playback starts.
-const PREBUFFER_SECS: f64 = 0.3;
 /// Per-frame step of the gain towards its target: about 20 ms to settle.
 const GAIN_SMOOTHING: f32 = 0.001;
 
@@ -29,68 +28,68 @@ pub struct Output {
 }
 
 struct Shared {
-    consumer: Mutex<Option<Consumer<f32>>>,
-    primed: AtomicBool,
+    mixer: Mutex<Mixer>,
     gain: AtomicU32,
     readings: Readings,
+}
+
+impl Shared {
+    fn new(rate: u32) -> Arc<Shared> {
+        Arc::new(Shared {
+            mixer: Mutex::new(Mixer::new(rate)),
+            gain: AtomicU32::new(0f32.to_bits()),
+            readings: Readings::default(),
+        })
+    }
 }
 
 impl Output {
     /// Opens the default output device. The stream lives on a thread of its
     /// own, as cpal streams can't move between threads on every platform.
     pub fn open() -> Result<Output, String> {
-        let shared = Arc::new(Shared {
-            consumer: Mutex::new(None),
-            primed: AtomicBool::new(false),
-            gain: AtomicU32::new(0f32.to_bits()),
-            readings: Readings::default(),
-        });
         let (ready_tx, ready_rx) = mpsc::channel();
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
-        let thread_shared = shared.clone();
         thread::Builder::new()
             .name("audio-output".into())
             .spawn(move || {
                 let lost = Arc::new(AtomicBool::new(false));
-                let (mut stream, rate) = match start_stream(thread_shared.clone(), lost.clone()) {
+                let (mut stream, rate, shared) = match start_stream(None, lost.clone()) {
                     Ok(started) => started,
                     Err(e) => {
                         ready_tx.send(Err(e)).ok();
                         return;
                     }
                 };
-                ready_tx.send(Ok(rate)).ok();
-                keep_playing(&mut stream, rate, &thread_shared, &lost, &stop_rx);
+                ready_tx.send(Ok((rate, shared.clone()))).ok();
+                keep_playing(&mut stream, rate, &shared, &lost, &stop_rx);
             })
             .map_err(|e| e.to_string())?;
-        let rate = ready_rx.recv().map_err(|e| e.to_string())??;
+        let (rate, shared) = ready_rx.recv().map_err(|e| e.to_string())??;
         Ok(Output { rate, shared, _stop: Some(stop_tx) })
     }
 
     /// An output without a device, whose queues are never played.
     #[cfg(test)]
     pub fn null() -> Output {
-        let shared = Arc::new(Shared {
-            consumer: Mutex::new(None),
-            primed: AtomicBool::new(false),
-            gain: AtomicU32::new(0f32.to_bits()),
-            readings: Readings::default(),
-        });
-        Output { rate: 48000, shared, _stop: None }
+        Output { rate: 48000, shared: Shared::new(48000), _stop: None }
     }
 
-    /// Starts a new queue, dropping whatever the previous one held.
+    /// Starts a new queue, which takes over from the one playing once it has
+    /// its prebuffer.
     pub fn new_queue(&self) -> Queue {
         let (producer, consumer) = RingBuffer::new(self.rate as usize * 2 * QUEUE_SECS);
-        self.shared.readings.clear();
-        self.shared.primed.store(false, Ordering::Release);
-        *self.shared.consumer.lock().unwrap() = Some(consumer);
+        self.shared.mixer.lock().unwrap().switch_to(consumer);
         Queue { producer, prebuffer: (self.rate as f64 * 2.0 * PREBUFFER_SECS) as usize }
     }
 
     pub fn silence(&self) {
-        *self.shared.consumer.lock().unwrap() = None;
+        self.shared.mixer.lock().unwrap().clear();
         self.shared.readings.clear();
+    }
+
+    /// Stops the station being switched from.
+    pub fn drop_outgoing(&self) {
+        self.shared.mixer.lock().unwrap().drop_outgoing();
     }
 
     /// Volume 0-100 on mpv's cubic curve.
@@ -129,14 +128,14 @@ fn keep_playing(
         }
         *stream = None;
         lost.store(false, Ordering::Release);
-        match start_stream(shared.clone(), lost.clone()) {
+        match start_stream(Some(shared.clone()), lost.clone()) {
             // The queue holds audio at the old rate; the next station picks
             // the new one up.
-            Ok((s, new_rate)) if new_rate == rate => {
+            Ok((s, new_rate, _)) if new_rate == rate => {
                 log!("audio output: reopened");
                 *stream = s;
             }
-            Ok((_, new_rate)) => {
+            Ok((_, new_rate, _)) => {
                 log!("audio output: the new device runs at {new_rate} Hz, not {rate} Hz; retrying");
                 lost.store(true, Ordering::Release);
             }
@@ -148,22 +147,27 @@ fn keep_playing(
     }
 }
 
-fn start_stream(shared: Arc<Shared>, lost: Arc<AtomicBool>) -> Result<(Option<cpal::Stream>, u32), String> {
+/// Opens the default device. The first time, shared is made for its rate.
+fn start_stream(
+    shared: Option<Arc<Shared>>,
+    lost: Arc<AtomicBool>,
+) -> Result<(Option<cpal::Stream>, u32, Arc<Shared>), String> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or("no audio output device")?;
     let supported = device.default_output_config().map_err(|e| e.to_string())?;
     let format = supported.sample_format();
     let config: StreamConfig = supported.into();
     log!("audio output: {:?} {:?} {} Hz, {} channels", device.id().ok(), format, config.sample_rate, config.channels);
+    let shared = shared.unwrap_or_else(|| Shared::new(config.sample_rate));
     let stream = match format {
-        SampleFormat::F32 => build::<f32>(&device, &config, shared, lost),
-        SampleFormat::I16 => build::<i16>(&device, &config, shared, lost),
-        SampleFormat::U16 => build::<u16>(&device, &config, shared, lost),
-        SampleFormat::I32 => build::<i32>(&device, &config, shared, lost),
+        SampleFormat::F32 => build::<f32>(&device, &config, shared.clone(), lost),
+        SampleFormat::I16 => build::<i16>(&device, &config, shared.clone(), lost),
+        SampleFormat::U16 => build::<u16>(&device, &config, shared.clone(), lost),
+        SampleFormat::I32 => build::<i32>(&device, &config, shared.clone(), lost),
         other => return Err(format!("unsupported output sample format {other}")),
     }?;
     stream.play().map_err(|e| e.to_string())?;
-    Ok((Some(stream), config.sample_rate))
+    Ok((Some(stream), config.sample_rate, shared))
 }
 
 fn build<T>(
@@ -176,38 +180,24 @@ where
     T: SizedSample + FromSample<f32>,
 {
     let channels = config.channels as usize;
-    let rate = config.sample_rate;
-    let prebuffer = (rate as f64 * 2.0 * PREBUFFER_SECS) as usize;
-    let mut meter = Meter::new(rate);
+    let mut meter = Meter::new(config.sample_rate);
     let mut gain = 0f32;
+    let mut mixed: Vec<f32> = Vec::new();
     let callback = move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
         let target = f32::from_bits(shared.gain.load(Ordering::Relaxed));
         let frames = data.len() / channels;
-        let mut guard = shared.consumer.try_lock().ok();
-        let consumer = guard.as_mut().and_then(|g| g.as_mut());
-
-        let mut chunk = None;
-        if let Some(c) = consumer {
-            let slots = c.slots();
-            if !shared.primed.load(Ordering::Acquire) && slots >= prebuffer {
-                shared.primed.store(true, Ordering::Release);
+        // Sized once for the device's block; this only allocates if it grows.
+        mixed.resize(frames * 2, 0.0);
+        let audible = if let Ok(mut mixer) = shared.mixer.try_lock() {
+            mixer.mix(&mut mixed)
+        } else {
+            mixed.fill(0.0);
+            0
+        };
+        for (i, (frame, &[l, r])) in data.chunks_exact_mut(channels).zip(mixed.as_chunks::<2>().0).enumerate() {
+            if i < audible {
+                meter.feed(l, r, &shared.readings);
             }
-            if shared.primed.load(Ordering::Acquire) {
-                let n = slots.min(frames * 2) & !1;
-                chunk = c.read_chunk(n).ok();
-            }
-        }
-        let (first, second) = chunk.as_ref().map_or((&[][..], &[][..]), rtrb::chunks::ReadChunk::as_slices);
-        let mut samples = first.iter().chain(second).copied();
-
-        for frame in data.chunks_exact_mut(channels) {
-            let (l, r) = match (samples.next(), samples.next()) {
-                (Some(l), Some(r)) => {
-                    meter.feed(l, r, &shared.readings);
-                    (l, r)
-                }
-                _ => (0.0, 0.0),
-            };
             gain += (target - gain) * GAIN_SMOOTHING;
             let (l, r) = (l * gain, r * gain);
             match frame {
@@ -219,9 +209,6 @@ where
                 }
                 [] => {}
             }
-        }
-        if let Some(c) = chunk {
-            c.commit_all();
         }
     };
     // A broken stream repeats its error until it is dropped, so only the

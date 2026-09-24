@@ -3,12 +3,8 @@
 use std::time::{Duration, Instant};
 
 use super::App;
-use crate::audio::player::State;
 
 pub const DEFAULT_SHUFFLE_INTERVAL: Duration = Duration::from_secs(5 * 60);
-const SHUFFLE_FADE: Duration = Duration::from_secs(2);
-/// How long shuffle waits for a station to play before fading in anyway.
-const PLAYBACK_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub const SLEEP_STEPS: [Duration; 5] = [
     Duration::from_secs(15 * 60),
@@ -19,66 +15,18 @@ pub const SLEEP_STEPS: [Duration; 5] = [
 ];
 pub const SLEEP_FADE: Duration = Duration::from_secs(60);
 
-#[derive(Clone, Copy, Debug)]
-struct Fade {
-    from: i32,
-    to: i32,
-    start: Instant,
-    duration: Duration,
-}
-
-impl Fade {
-    fn new(from: i32, to: i32, start: Instant, duration: Duration) -> Self {
-        Fade { from, to, start, duration }
-    }
-
-    /// The volume at now, and whether the fade is over.
-    fn at(&self, now: Instant) -> (i32, bool) {
-        let t = now.saturating_duration_since(self.start).as_secs_f64() / self.duration.as_secs_f64().max(1e-9);
-        if t >= 1.0 {
-            return (self.to, true);
-        }
-        (self.from + ((self.to - self.from) as f64 * t).round() as i32, false)
-    }
-}
-
-#[derive(Debug)]
-enum Phase {
-    Waiting,
-    FadingOut(Fade),
-    /// The station picked is tuning in, silent.
-    Tuning {
-        url: String,
-        since: Instant,
-    },
-    FadingIn(Fade),
-}
-
-/// Plays a random station of the list every interval, fading between them.
+/// Plays a random station of the list every interval; the player crossfades.
 #[derive(Debug)]
 pub struct Shuffle {
     pub active: bool,
     pub interval: Duration,
-    fade: Duration,
-    timeout: Duration,
     /// When the current interval began.
     start: Instant,
-    phase: Phase,
-    /// The volume to put back when stopped mid-fade.
-    restore: Option<i32>,
 }
 
 impl Default for Shuffle {
     fn default() -> Self {
-        Shuffle {
-            active: false,
-            interval: DEFAULT_SHUFFLE_INTERVAL,
-            fade: SHUFFLE_FADE,
-            timeout: PLAYBACK_TIMEOUT,
-            start: Instant::now(),
-            phase: Phase::Waiting,
-            restore: None,
-        }
+        Shuffle { active: false, interval: DEFAULT_SHUFFLE_INTERVAL, start: Instant::now() }
     }
 }
 
@@ -129,83 +77,23 @@ impl App {
         }
         self.shuffle.active = true;
         self.play_random();
-        self.restart_shuffle(now);
+        self.shuffle.start = now;
     }
 
     pub(super) fn stop_shuffle(&mut self) {
-        if !self.shuffle.active {
-            return;
-        }
         self.shuffle.active = false;
-        self.end_shuffle_fade();
     }
 
     pub(super) fn set_shuffle_interval(&mut self, minutes: u64, now: Instant) {
         self.shuffle.interval = Duration::from_secs(minutes * 60);
-        if self.shuffle.active {
-            self.restart_shuffle(now);
-        }
-    }
-
-    fn restart_shuffle(&mut self, now: Instant) {
-        self.end_shuffle_fade();
         self.shuffle.start = now;
     }
 
-    fn end_shuffle_fade(&mut self) {
-        self.shuffle.phase = Phase::Waiting;
-        if let Some(volume) = self.shuffle.restore.take() {
-            self.player.set_volume(volume);
-        }
-    }
-
-    /// Fades out, plays a random station and fades back in once it plays, or
-    /// after the timeout. The next interval starts when the station is picked.
     fn tick_shuffle(&mut self, now: Instant) {
-        if !self.shuffle.active {
-            return;
+        if self.shuffle.active && self.shuffle.remaining(now).is_zero() {
+            self.shuffle.start = now;
+            self.play_random();
         }
-        let due = now.saturating_duration_since(self.shuffle.start) >= self.shuffle.interval;
-        let next = match std::mem::replace(&mut self.shuffle.phase, Phase::Waiting) {
-            Phase::Waiting if due => {
-                let volume = self.player.snapshot().volume;
-                self.shuffle.restore = Some(volume);
-                Phase::FadingOut(Fade::new(volume, 0, now, self.shuffle.fade))
-            }
-            Phase::FadingOut(fade) => {
-                let (volume, done) = fade.at(now);
-                self.player.set_volume(volume);
-                if done {
-                    self.shuffle.start = now;
-                    let url = self.play_random().unwrap_or_default();
-                    Phase::Tuning { url, since: now }
-                } else {
-                    Phase::FadingOut(fade)
-                }
-            }
-            Phase::Tuning { url, since } => {
-                let inf = self.player.snapshot();
-                let tuned = inf.url != url || inf.state == State::Playing || !inf.song.is_empty();
-                if tuned || now.saturating_duration_since(since) >= self.shuffle.timeout {
-                    let to = self.shuffle.restore.unwrap_or(inf.volume);
-                    Phase::FadingIn(Fade::new(inf.volume, to, now, self.shuffle.fade))
-                } else {
-                    Phase::Tuning { url, since }
-                }
-            }
-            Phase::FadingIn(fade) => {
-                let (volume, done) = fade.at(now);
-                self.player.set_volume(volume);
-                if done {
-                    self.shuffle.restore = None;
-                    Phase::Waiting
-                } else {
-                    Phase::FadingIn(fade)
-                }
-            }
-            waiting @ Phase::Waiting => waiting,
-        };
-        self.shuffle.phase = next;
     }
 
     /// Steps through `SLEEP_STEPS`, then off. Does nothing while nothing plays.
@@ -242,7 +130,6 @@ impl App {
             return;
         }
         if self.sleep.restore.is_none() {
-            // Stopping the shuffle first puts back a volume it faded.
             self.stop_shuffle();
             self.sleep.restore = Some(self.player.snapshot().volume);
         }
@@ -281,31 +168,15 @@ mod tests {
         let row = a.station_rows()[a.stations_state.cursor];
         assert!(matches!(row, StationRow::Station(i) if a.listed[i].url == first));
 
-        // The offline player never plays, so the station fades in after the
-        // timeout.
-        a.shuffle.fade = Duration::from_millis(10);
-        a.shuffle.timeout = Duration::from_millis(300);
-        let mut now = t0 + a.shuffle.interval;
-        a.tick(now);
-        now += Duration::from_millis(10);
-        a.tick(now);
+        a.tick(t0 + a.shuffle.interval / 2);
+        assert_eq!(url(&a), first);
+        let next = t0 + a.shuffle.interval;
+        a.tick(next);
         assert_ne!(url(&a), first);
-        assert_eq!(volume(&a), 0, "silent while tuning in");
-        let picked = now;
-        assert_eq!(a.shuffle.remaining(picked), a.shuffle.interval);
-        now += Duration::from_millis(300);
-        a.tick(now);
-        now += Duration::from_millis(10);
-        a.tick(now);
-        assert_eq!(volume(&a), DEFAULT_VOLUME);
+        assert_eq!(volume(&a), DEFAULT_VOLUME, "the player crossfades; the volume stays");
+        assert_eq!(a.shuffle.remaining(next), a.shuffle.interval);
 
-        // Picking a station ends the shuffle and restores the volume at once.
-        now = picked + a.shuffle.interval;
-        a.tick(now);
-        a.tick(now + Duration::from_millis(5));
-        assert!(volume(&a) < DEFAULT_VOLUME);
         a.toggle_play_manual(a.listed[0].clone());
-        assert_eq!(volume(&a), DEFAULT_VOLUME);
         assert!(!a.shuffle.active, "playing a station must end the shuffle");
     }
 

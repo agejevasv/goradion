@@ -93,11 +93,16 @@ struct Inner {
 struct PlayerState {
     info: Info,
     session: Option<Session>,
+    /// Cancels the station being switched from, which plays on until the new
+    /// one starts.
+    outgoing: Option<Arc<AtomicBool>>,
 }
 
 struct Session {
     id: u64,
     cancel: Arc<AtomicBool>,
+    /// The session's audio reached the output.
+    queued: Arc<AtomicBool>,
     retries: u32,
 }
 
@@ -120,7 +125,7 @@ impl Player {
             inner: Arc::new(Inner {
                 output,
                 online,
-                state: Mutex::new(PlayerState { info, session: None }),
+                state: Mutex::new(PlayerState { info, session: None, outgoing: None }),
                 listeners: Mutex::new(Vec::new()),
             }),
         }
@@ -145,12 +150,21 @@ impl Player {
             self.inner.stop_locked(&mut st);
             return;
         }
+        // What is audible plays on until the new station starts; a station
+        // still connecting is dropped.
         if let Some(old) = st.session.take() {
-            old.cancel.store(true, Ordering::Relaxed);
+            if old.queued.load(Ordering::Acquire) {
+                if let Some(older) = st.outgoing.replace(old.cancel) {
+                    older.store(true, Ordering::Relaxed);
+                }
+            } else {
+                old.cancel.store(true, Ordering::Relaxed);
+            }
         }
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let cancel = Arc::new(AtomicBool::new(false));
-        st.session = Some(Session { id, cancel: cancel.clone(), retries: 0 });
+        let queued = Arc::new(AtomicBool::new(false));
+        st.session = Some(Session { id, cancel: cancel.clone(), queued: queued.clone(), retries: 0 });
 
         let info = &mut st.info;
         info.station = station.to_string();
@@ -171,7 +185,7 @@ impl Player {
         let url = url.to_string();
         thread::Builder::new()
             .name("stream".into())
-            .spawn(move || inner.run_session(id, &url, &cancel))
+            .spawn(move || inner.run_session(id, &url, &cancel, &queued))
             .expect("spawning a thread");
     }
 
@@ -225,6 +239,9 @@ impl Inner {
         if let Some(s) = st.session.take() {
             s.cancel.store(true, Ordering::Relaxed);
         }
+        if let Some(c) = st.outgoing.take() {
+            c.store(true, Ordering::Relaxed);
+        }
         self.output.silence();
         let info = &mut st.info;
         info.set_state(State::Stopped, "");
@@ -234,6 +251,10 @@ impl Inner {
         info.bitrate = 0;
         info.format.clear();
         self.notify();
+    }
+
+    fn is_current(&self, id: u64) -> bool {
+        self.lock().session.as_ref().is_some_and(|s| s.id == id)
     }
 
     /// Runs change when session id is still the current one.
@@ -246,12 +267,14 @@ impl Inner {
         }
     }
 
-    fn run_session(self: Arc<Self>, id: u64, url: &str, cancel: &AtomicBool) {
+    fn run_session(self: Arc<Self>, id: u64, url: &str, cancel: &AtomicBool, queued: &AtomicBool) {
         loop {
-            let result = self.play_once(id, url, cancel);
-            if cancel.load(Ordering::Relaxed) {
+            let result = self.play_once(id, url, cancel, queued);
+            // A station switched from ends here, whatever went wrong.
+            if cancel.load(Ordering::Relaxed) || !self.is_current(id) {
                 return;
             }
+            let never_queued = matches!(result, Err(PlayError::Open(_)));
             let (reason, retry) = match result {
                 Ok(()) => return,
                 Err(PlayError::Open(OpenError::Unsupported(what))) => (what.to_string(), false),
@@ -261,8 +284,18 @@ impl Inner {
             };
             log!("{url}: {reason}");
 
+            // A station that failed takes the one it was replacing with it;
+            // before its audio arrived, what plays is that other station's.
+            if never_queued {
+                self.output.silence();
+            } else {
+                self.output.drop_outgoing();
+            }
             let mut delay = Duration::ZERO;
             self.update(id, |st| {
+                if let Some(c) = st.outgoing.take() {
+                    c.store(true, Ordering::Relaxed);
+                }
                 if retry {
                     let s = st.session.as_mut().unwrap();
                     delay = (Duration::from_secs(1) * 2u32.saturating_pow(s.retries)).min(MAX_RETRY_DELAY);
@@ -288,19 +321,23 @@ impl Inner {
         }
     }
 
-    fn play_once(self: &Arc<Self>, id: u64, url: &str, cancel: &AtomicBool) -> Result<(), PlayError> {
+    fn play_once(
+        self: &Arc<Self>,
+        id: u64,
+        url: &str,
+        cancel: &AtomicBool,
+        queued: &AtomicBool,
+    ) -> Result<(), PlayError> {
         let titles = self.clone();
         let source = source::open(url, Box::new(move |title| titles.set_song(id, title))).map_err(PlayError::Open)?;
         if cancel.load(Ordering::Relaxed) {
             return Ok(());
         }
         let started = self.clone();
-        let mut sink = QueueSink::new(
-            self.output.new_queue(),
-            self.output.rate,
-            cancel,
-            Box::new(move || started.set_song(id, String::new())),
-        );
+        let queue = self.output.new_queue();
+        queued.store(true, Ordering::Release);
+        let mut sink =
+            QueueSink::new(queue, self.output.rate, cancel, Box::new(move || started.set_song(id, String::new())));
         let mut on_event = |event| match event {
             Event::Format(f) => self.update(id, |st| st.info.format = f),
             Event::Bitrate(br) => self.update(id, |st| st.info.bitrate = br),
@@ -374,7 +411,8 @@ impl<'a> QueueSink<'a> {
 
     fn push(&mut self, mut samples: &[f32]) -> bool {
         while !samples.is_empty() {
-            if self.cancel.load(Ordering::Relaxed) {
+            // The output lets go of a queue once another station took over.
+            if self.cancel.load(Ordering::Relaxed) || self.queue.producer.is_abandoned() {
                 return false;
             }
             let n = self.queue.producer.slots().min(samples.len()) & !1;
