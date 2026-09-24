@@ -1,7 +1,9 @@
 on:
   push:
+    # Pre-release tags such as v0.12.0-pre build the Rust version (rust.yml).
     tags:
       - 'v*'
+      - '!v*-*'
 
 permissions: write-all
 

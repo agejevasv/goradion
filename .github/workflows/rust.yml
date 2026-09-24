@@ -3,8 +3,9 @@ name: Rust
 on:
   push:
     branches: [rust-rewrite]
-    # A rust-v tag publishes a pre-release; plain v tags stay with the Go release.
-    tags: ['rust-v*']
+    # A pre-release tag such as v0.12.0-pre publishes the Rust version; plain
+    # v tags stay with the Go release (release.yml).
+    tags: ['v*-*']
   pull_request:
     paths: ['rust/**', 'internal/radio/remote.html', '.github/workflows/rust.yml']
   # New advisories appear without any change here.
@@ -89,7 +90,7 @@ jobs:
 
   release:
     name: Pre-release
-    if: startsWith(github.ref, 'refs/tags/rust-v')
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: [checks, build]
     runs-on: ubuntu-latest
     permissions:
