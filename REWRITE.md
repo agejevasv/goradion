@@ -31,7 +31,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] Spectrum: 12 bands, 40 Hz – 12 kHz, tilt and floor as in Go
 - [x] Recover from device loss (tried by restarting PulseAudio mid-stream)
 - [x] `-c`: play a few seconds of every station through the engine, report codec and failures
-- [ ] Legacy TLS servers: HiOnLine Classic only offers RSA key exchange, which rustls refuses; mpv plays it
+- [ ] Legacy TLS servers (RSA key exchange only, which rustls refuses): none left in `rust/stations.csv`
 
 ## App
 

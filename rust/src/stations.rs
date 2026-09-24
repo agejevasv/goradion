@@ -3,7 +3,7 @@ use std::io::Read;
 use crate::audio::http;
 use crate::log;
 
-const BUILT_IN: &str = include_str!("../../internal/radio/stations.csv");
+const BUILT_IN: &str = include_str!("../stations.csv");
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Station {

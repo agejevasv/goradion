@@ -4,7 +4,7 @@ on:
   push:
     branches: [rust-rewrite]
   pull_request:
-    paths: ['rust/**', 'internal/radio/stations.csv', 'internal/radio/remote.html', '.github/workflows/rust.yml']
+    paths: ['rust/**', 'internal/radio/remote.html', '.github/workflows/rust.yml']
 
 defaults:
   run:
