@@ -11,8 +11,8 @@ export RUSTDOCFLAGS := "-D warnings"
 default:
     @just --list
 
-# Everything: formatting, lints, tests, docs, dependencies, minimum Rust.
-check: fmt clippy test doc deny machete msrv
+# Every check, then the release build.
+check: fmt clippy test doc deny machete msrv build
 
 # Code formatted as rustfmt.toml says.
 fmt:
@@ -42,6 +42,10 @@ machete:
 msrv:
     rustup toolchain install {{msrv}} --profile minimal --no-self-update
     cargo +{{msrv}} check --all-targets --locked --target-dir target/msrv
+
+# The release binary, in target/release/.
+build:
+    cargo build --release --locked
 
 # Formats the code and applies clippy's safe suggestions.
 fix:
