@@ -23,7 +23,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] HE-AAC plays (core only until SBR exists)
 - [x] Output via cpal, resampled to the device rate (PulseAudio null sink: real time, ~2% CPU)
 - [ ] States: idle, buffering, playing, stopped, failed (retry with backoff 1s…30s), unsupported (no retry), no device
-- [ ] Volume 0–100 (mpv's cubic curve), fades
+- [x] Volume 0–100 (mpv's cubic curve), fades
 - [x] Bitrate
 - [x] Song history (20)
 - [x] Level meter (RMS, -32 dBFS floor)
@@ -45,12 +45,12 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] Gauges: volume, spectrum
 - [ ] Mouse on the volume gauge (coded, not tried)
 - [ ] Mouse: click to play, wheel scrolls (coded, not tried)
-- [ ] Random station (`*`), shuffle (`Ctrl+R`, `Alt+1`–`9`)
-- [ ] Sleep timer (`Ctrl+Z`), fade out, click countdown to cancel
+- [x] Random station (`*`), shuffle (`Ctrl+R`, `Alt+1`–`9`)
+- [x] Sleep timer (`Ctrl+Z`), fade out, click countdown to cancel
 - [x] Bookmarks (`Ctrl+B`), saved to file
 - [ ] Search own stations and radio-browser (`:`, `Ctrl+F`, `Ctrl+S`)
 - [x] Help (`?`), hint bar
-- [ ] Themes (`Ctrl+T`), terminal background via OSC 11
+- [x] Themes (`Ctrl+T`), terminal background via OSC 11
 - [x] `--ascii` glyphs, locale detection
 - [x] `--no-vu`
 - [x] Config YAML: defaults, save `volume`/`tag`/`station`/`theme` keeping layout and comments

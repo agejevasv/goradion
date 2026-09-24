@@ -1,6 +1,6 @@
 //! The last station, its tag and the volume, kept in the config between runs.
 
-use super::{ALL_STATIONS_TAG, App, BOOKMARKS_TAG, Page, TagRef};
+use super::{ALL_STATIONS_TAG, App, BOOKMARKS_TAG, TagRef};
 use crate::log;
 use crate::stations::Station;
 
@@ -62,6 +62,7 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    use super::super::Page;
     use super::super::tests::{test_app, test_app_with};
     use super::*;
     use crate::config::Config;

@@ -6,11 +6,13 @@ mod help;
 mod list;
 mod session;
 mod text;
+mod theme_modal;
+mod timers;
 pub mod theme;
 
 use std::collections::HashMap;
 use std::io;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use rand::RngExt;
 use ratatui::DefaultTerminal;
@@ -51,6 +53,10 @@ pub struct Look {
 pub struct Options {
     pub ascii: bool,
     pub vu: bool,
+}
+
+enum Modal {
+    Theme(ListState),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -104,6 +110,13 @@ pub struct App {
     /// The station last started, and the tag it was started from.
     playing: Option<(Station, Option<TagRef>)>,
 
+    shuffle: timers::Shuffle,
+    sleep: timers::Sleep,
+    modal: Option<Modal>,
+    modal_area: Rect,
+    /// The terminal's default background as last set by sync_term_bg.
+    term_bg: ratatui::style::Color,
+
     tags_area: Rect,
     stations_area: Rect,
     quit: bool,
@@ -150,6 +163,11 @@ impl App {
             tags_area: Rect::default(),
             stations_area: Rect::default(),
             quit: false,
+            shuffle: timers::Shuffle::default(),
+            sleep: timers::Sleep::default(),
+            modal: None,
+            modal_area: Rect::default(),
+            term_bg: ratatui::style::Color::Reset,
             config,
         };
         app.restore_session();
@@ -160,14 +178,20 @@ impl App {
         let mut terminal = ratatui::init();
         execute!(io::stdout(), EnableMouseCapture)?;
         let result = self.event_loop(&mut terminal);
+        self.look.t = theme::THEMES[0];
+        self.sync_term_bg();
         let _ = execute!(io::stdout(), DisableMouseCapture);
         ratatui::restore();
+        self.cancel_sleep();
+        self.stop_shuffle();
         self.save_session();
         result
     }
 
     fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.quit {
+            self.tick(Instant::now());
+            self.sync_term_bg();
             let now = SystemTime::now();
             self.card.update(self.player.snapshot(), now);
             self.card.advance(now, &self.player);
@@ -194,7 +218,13 @@ impl App {
     }
 
     fn extras(&self) -> Extras {
-        Extras { bookmarked: self.bookmarks.has(&self.player.snapshot().url), ..Extras::default() }
+        let now = Instant::now();
+        Extras {
+            bookmarked: self.bookmarks.has(&self.player.snapshot().url),
+            shuffle: (self.shuffle.active && !self.shuffle.interval.is_zero())
+                .then(|| (self.shuffle.remaining(now), self.shuffle.interval)),
+            sleep: self.sleep.active().then(|| (self.sleep.remaining(now), self.sleep.fade())),
+        }
     }
 
     // Lists
@@ -308,13 +338,27 @@ impl App {
     fn toggle_play(&mut self, station: Station) {
         if station.url != self.player.snapshot().url {
             self.playing = Some((station.clone(), self.tag.clone()));
+        } else {
+            self.cancel_sleep();
         }
         self.player.play(&station.title, &station.url);
     }
 
+    /// toggle_play for a station the user picked, which ends the shuffle.
+    fn toggle_play_manual(&mut self, station: Station) {
+        self.stop_shuffle();
+        self.toggle_play(station);
+    }
+
+    fn stop(&mut self) {
+        self.cancel_sleep();
+        self.stop_shuffle();
+        self.player.stop();
+    }
+
     /// Plays a random station of the rows shown, avoiding the one playing
     /// when there is another.
-    fn play_random(&mut self) {
+    fn play_random(&mut self) -> Option<String> {
         let rows = self.station_rows();
         let choices: Vec<(usize, usize)> = rows
             .iter()
@@ -325,7 +369,7 @@ impl App {
             })
             .collect();
         if choices.is_empty() {
-            return;
+            return None;
         }
         let current = self.player.snapshot().url;
         let mut rng = rand::rng();
@@ -334,12 +378,15 @@ impl App {
             pick = choices[rng.random_range(0..choices.len())];
         }
         self.stations_state.cursor = pick.0;
-        self.toggle_play(self.listed[pick.1].clone());
+        let station = self.listed[pick.1].clone();
+        let url = station.url.clone();
+        self.toggle_play(station);
+        Some(url)
     }
 
     fn play_bookmark(&mut self, n: usize) {
         if let Some(s) = self.bookmarks.list().into_iter().nth(n) {
-            self.toggle_play(s);
+            self.toggle_play_manual(s);
         }
     }
 
@@ -392,9 +439,22 @@ impl App {
 
     fn on_key(&mut self, k: KeyEvent) {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+        if ctrl && k.code == KeyCode::Char('c') {
+            self.quit = true;
+            return;
+        }
+        if self.modal.is_some() {
+            self.on_theme_key(k);
+            return;
+        }
         match k.code {
-            KeyCode::Char('c') if ctrl => self.quit = true,
+            KeyCode::Char('t') if ctrl => self.show_theme_modal(),
             KeyCode::Char('b') if ctrl => self.toggle_bookmark(),
+            KeyCode::Char('r') if ctrl => self.toggle_shuffle(Instant::now()),
+            KeyCode::Char('z') if ctrl => self.cycle_sleep(Instant::now()),
+            KeyCode::Char(c @ '1'..='9') if k.modifiers.contains(KeyModifiers::ALT) => {
+                self.set_shuffle_interval(c as u64 - '0' as u64, Instant::now())
+            }
             KeyCode::Char(_) if ctrl || k.modifiers.contains(KeyModifiers::ALT) => {}
             KeyCode::Left => self.change_volume(-VOLUME_STEP),
             KeyCode::Right => self.change_volume(VOLUME_STEP),
@@ -449,7 +509,10 @@ impl App {
             ' ' => self.activate(),
             '+' | '=' => self.change_volume(VOLUME_STEP),
             '-' | '_' => self.change_volume(-VOLUME_STEP),
-            '*' => self.play_random(),
+            '*' => {
+                self.stop_shuffle();
+                self.play_random();
+            }
             '?' => self.show(Page::Help),
             '/' | '#' => self.show(Page::Tags),
             '1'..='9' => self.play_bookmark(c as usize - '1' as usize),
@@ -508,19 +571,30 @@ impl App {
                 self.tag = None;
                 self.show(Page::Tags);
             }
-            Some(StationRow::Random) => self.play_random(),
-            Some(&StationRow::Station(i)) => self.toggle_play(self.listed[i].clone()),
+            Some(StationRow::Random) => {
+                self.stop_shuffle();
+                self.play_random();
+            }
+            Some(&StationRow::Station(i)) => self.toggle_play_manual(self.listed[i].clone()),
             None => {}
         }
     }
 
     fn on_mouse(&mut self, m: MouseEvent) {
+        if self.modal.is_some() {
+            self.on_theme_mouse(m);
+            return;
+        }
         let pos = Position::new(m.column, m.row);
         if self.card.area.contains(pos) {
             match m.kind {
                 MouseEventKind::ScrollUp => self.change_volume(VOLUME_STEP),
                 MouseEventKind::ScrollDown => self.change_volume(-VOLUME_STEP),
                 MouseEventKind::Down(MouseButton::Left) => {
+                    if self.sleep.active() && self.card.on_sleep_label(m.column, m.row) {
+                        self.cancel_sleep();
+                        self.card.flash_sleep(SystemTime::now());
+                    }
                     if let Some(volume) = self.card.volume_at(m.column, m.row) {
                         self.card.flash(SystemTime::now());
                         self.player.set_volume(volume);
@@ -619,6 +693,9 @@ impl App {
             let segs = hint_segs(&self.look, &hints, hint_area.width.saturating_sub(1) as usize);
             draw_segs(buf, hint_area.x + 1, hint_area.y, hint_area.width.saturating_sub(1) as usize, &segs);
         }
+        if self.modal.is_some() {
+            self.draw_theme_modal(buf, body);
+        }
     }
 
     fn draw_tags(&mut self, buf: &mut Buffer, _now: SystemTime) {
@@ -698,6 +775,9 @@ impl App {
     }
 
     fn hints(&self) -> Vec<(&'static str, &'static str)> {
+        if self.modal.is_some() {
+            return vec![("↑ ↓", "preview"), ("enter", "apply"), ("esc", "cancel")];
+        }
         let filtering = match self.page {
             Page::Tags => !self.tags_state.filter.is_empty(),
             Page::Main => !self.stations_state.filter.is_empty(),
@@ -708,13 +788,27 @@ impl App {
             Page::Tags if filtering => vec![("enter", "open"), ("↑ ↓", "move"), ("esc", "clear filter")],
             Page::Main if filtering => vec![("enter", "play"), ("↑ ↓", "move"), ("esc", "clear filter")],
             Page::Main => {
-                let mut hints = vec![("a-z", "filter"), ("enter", "play"), ("*", "random"), ("^B", "bookmark"), ("?", "help")];
+                let mut hints = vec![
+                    ("a-z", "filter"),
+                    ("^B", "bookmark"),
+                    ("^R", "shuffle"),
+                    ("^Z", "sleep"),
+                    ("^T", "theme"),
+                    ("?", "help"),
+                ];
                 if !self.wide {
                     hints.push(("esc", "tags"));
                 }
                 hints
             }
-            Page::Tags => vec![("a-z", "filter"), ("enter", "open"), ("?", "help"), ("esc", "quit")],
+            Page::Tags => vec![
+                ("a-z", "filter"),
+                ("^R", "shuffle"),
+                ("^Z", "sleep"),
+                ("^T", "theme"),
+                ("?", "help"),
+                ("esc", "quit"),
+            ],
         }
     }
 }

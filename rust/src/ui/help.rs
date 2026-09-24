@@ -18,6 +18,9 @@ fn lines(look: &Look) -> Vec<Vec<Seg>> {
                 ("1 to 9", "play one of the first nine bookmarks"),
                 (arrows.as_str(), "volume down or up"),
                 ("Ctrl+B", "bookmark the station under the cursor, or the one playing; again to remove"),
+                ("Ctrl+R", "shuffle: a random station every few minutes"),
+                ("Ctrl+Z", "sleep timer: 15, 30, 45, 60, 90 minutes, off; fades out in the last minute"),
+                ("Alt+1 to 9", "shuffle interval in minutes"),
             ],
         ),
         (
@@ -35,7 +38,9 @@ fn lines(look: &Look) -> Vec<Vec<Seg>> {
             "More",
             vec![
                 ("?", "this help"),
+                ("Ctrl+T", "colour theme"),
                 ("Mouse", "click a station to play it, scroll lists; scroll or click the volume gauge"),
+                ("", "click the sleep countdown to turn the timer off"),
                 ("Ctrl+C", "quit"),
             ],
         ),
