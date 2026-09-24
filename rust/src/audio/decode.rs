@@ -2,13 +2,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::{MediaSourceStream, ReadOnlySource};
 use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTag};
 
+use super::codec::{Decoder, Failure};
 use super::source::Source;
 
 /// Consecutive undecodable packets before the stream counts as broken.
@@ -66,15 +66,17 @@ pub fn run(
     if let Some(mime) = &source.mime {
         hint.mime_type(mime);
     }
-    let mut format = symphonia::default::get_probe().probe(
-        &hint,
-        mss,
-        FormatOptions::default(),
-        MetadataOptions::default(),
-    )?;
+    // Whatever the server sent might be a passing error page, so a stream
+    // that isn't recognised is retried like a broken one.
+    let mut format = symphonia::default::get_probe()
+        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .map_err(|e| match e {
+            SymError::Unsupported(what) => DecodeError::Failed(format!("unknown stream format ({what})")),
+            e => e.into(),
+        })?;
 
     let (mut track_id, mut decoder) = open_decoder(format.as_ref())?;
-    on_event(Event::Format(describe(decoder.as_ref())));
+    on_event(Event::Format(decoder.describe()));
     if let Some(br) = source.bitrate {
         on_event(Event::Bitrate(br));
     }
@@ -100,7 +102,7 @@ pub fn run(
             Ok(None) => return Err(DecodeError::Ended),
             Err(SymError::ResetRequired) => {
                 (track_id, decoder) = open_decoder(format.as_ref())?;
-                on_event(Event::Format(describe(decoder.as_ref())));
+                on_event(Event::Format(decoder.describe()));
                 continue;
             }
             Err(e) => return Err(e.into()),
@@ -112,25 +114,21 @@ pub fn run(
             continue;
         }
 
-        let buf = match decoder.decode(&packet) {
-            Ok(buf) => buf,
-            Err(SymError::DecodeError(e)) => {
+        let (rate, channels) = match decoder.decode(&packet, &mut samples) {
+            Ok(decoded) => decoded,
+            Err(Failure::Packet(e)) => {
                 bad_packets += 1;
                 if bad_packets > MAX_BAD_PACKETS {
-                    return Err(DecodeError::Failed(e.to_string()));
+                    return Err(DecodeError::Failed(e));
                 }
                 continue;
             }
-            Err(e) => return Err(e.into()),
+            Err(Failure::Stream(e)) => return Err(e),
         };
         bad_packets = 0;
-        if buf.frames() == 0 {
+        if samples.is_empty() {
             continue;
         }
-
-        let rate = buf.spec().rate();
-        let channels = buf.spec().channels().count().max(1);
-        buf.copy_to_vec_interleaved(&mut samples);
         to_stereo(&samples, channels, &mut stereo);
 
         if source.bitrate.is_none() {
@@ -160,36 +158,11 @@ impl std::io::Read for SyncReader {
     }
 }
 
-fn open_decoder(format: &dyn FormatReader) -> Result<(u32, Box<dyn AudioDecoder>), DecodeError> {
+fn open_decoder(format: &dyn FormatReader) -> Result<(u32, Decoder), DecodeError> {
     let track = format
         .first_track_known_codec(TrackType::Audio)
         .ok_or_else(|| DecodeError::Unsupported("no supported audio track".into()))?;
-    let params = track
-        .codec_params
-        .as_ref()
-        .and_then(|p| p.audio())
-        .ok_or_else(|| DecodeError::Unsupported("no audio parameters".into()))?;
-    let decoder = symphonia::default::get_codecs()
-        .make_audio_decoder(params, &AudioDecoderOptions::default())
-        .map_err(|e| match e {
-            SymError::Unsupported(what) => DecodeError::Unsupported(format!("unsupported codec ({what})")),
-            e => e.into(),
-        })?;
-    Ok((track.id, decoder))
-}
-
-fn describe(decoder: &dyn AudioDecoder) -> String {
-    let info = decoder.codec_info();
-    let params = decoder.codec_params();
-    let profile = params
-        .profile
-        .and_then(|p| info.profiles.iter().find(|i| i.profile == p))
-        .map(|i| format!(" {}", i.short_name))
-        .unwrap_or_default();
-    match params.sample_rate {
-        Some(rate) => format!("{}{} {} Hz", info.short_name, profile, rate),
-        None => format!("{}{}", info.short_name, profile),
-    }
+    Ok((track.id, Decoder::open(track)?))
 }
 
 /// Artist and title from Vorbis comments or ID3 tags; a lone title will do.

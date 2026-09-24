@@ -448,3 +448,91 @@ impl Sink for QueueSink<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::Instant;
+
+    /// Serves body to every connection, counting them.
+    fn serve(head: &'static str, body: Vec<u8>) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stream", listener.local_addr().unwrap());
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = count.clone();
+        thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { continue };
+                seen.fetch_add(1, Ordering::Relaxed);
+                let mut req = [0u8; 1024];
+                let _ = conn.read(&mut req);
+                let _ = conn.write_all(head.as_bytes());
+                let _ = conn.write_all(&body);
+            }
+        });
+        (url, count)
+    }
+
+    fn wait_for(p: &Player, what: &str, cond: impl Fn(&Info) -> bool) -> Info {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let inf = p.snapshot();
+            if cond(&inf) {
+                return inf;
+            }
+            assert!(Instant::now() < deadline, "{what}: {inf:?}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn online() -> Player {
+        Player::with_output(Output::null(), true)
+    }
+
+    #[test]
+    fn broken_stream_is_retried() {
+        let (url, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", vec![0x55; 2048]);
+        let p = online();
+        p.play("Broken", &url);
+        let inf = wait_for(&p, "failed", |i| i.state == State::Failed);
+        assert!(inf.status.starts_with("Network or stream issues"), "{}", inf.status);
+        // The first retry comes after a second.
+        wait_for(&p, "retried", |_| connections.load(Ordering::Relaxed) >= 2);
+        p.stop();
+        let inf = p.snapshot();
+        assert_eq!((inf.state, inf.url.as_str()), (State::Stopped, ""));
+    }
+
+    #[test]
+    fn hls_is_not_retried() {
+        let (url, connections) = serve(
+            "HTTP/1.0 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\n\r\n",
+            b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\nseg1.ts\n".to_vec(),
+        );
+        let p = online();
+        p.play("HLS", &url);
+        let inf = wait_for(&p, "unsupported", |i| i.state == State::Unsupported);
+        assert!(inf.status.contains("HLS"), "{}", inf.status);
+        thread::sleep(Duration::from_millis(1500));
+        assert_eq!(connections.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn same_url_toggles_and_history_is_capped() {
+        let p = Player::offline();
+        p.play("A", "http://a");
+        assert_eq!(p.snapshot().state, State::Buffering);
+        let id = p.inner.lock().session.as_ref().unwrap().id;
+        for i in 0..HISTORY_SIZE + 5 {
+            p.inner.set_song(id, format!("Song {i}"));
+        }
+        let inf = p.snapshot();
+        assert_eq!(inf.state, State::Playing);
+        assert_eq!(inf.history.len(), HISTORY_SIZE);
+        assert_eq!(inf.history.last().unwrap().song, format!("Song {}", HISTORY_SIZE + 4));
+        p.play("A", "http://a");
+        assert_eq!(p.snapshot().state, State::Stopped);
+    }
+}

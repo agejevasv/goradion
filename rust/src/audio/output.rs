@@ -5,9 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
+use cpal::{ErrorKind, FromSample, SampleFormat, SizedSample, StreamConfig};
 use rtrb::{Consumer, Producer, RingBuffer};
 
 use super::meter::{Meter, Readings};
@@ -49,15 +50,17 @@ impl Output {
         let thread_shared = shared.clone();
         thread::Builder::new()
             .name("audio-output".into())
-            .spawn(move || match start_stream(thread_shared) {
-                Ok((stream, rate)) => {
-                    ready_tx.send(Ok(rate)).ok();
-                    let _ = stop_rx.recv();
-                    drop(stream);
-                }
-                Err(e) => {
-                    ready_tx.send(Err(e)).ok();
-                }
+            .spawn(move || {
+                let lost = Arc::new(AtomicBool::new(false));
+                let (mut stream, rate) = match start_stream(thread_shared.clone(), lost.clone()) {
+                    Ok(started) => started,
+                    Err(e) => {
+                        ready_tx.send(Err(e)).ok();
+                        return;
+                    }
+                };
+                ready_tx.send(Ok(rate)).ok();
+                keep_playing(&mut stream, rate, &thread_shared, &lost, &stop_rx);
             })
             .map_err(|e| e.to_string())?;
         let rate = ready_rx.recv().map_err(|e| e.to_string())??;
@@ -106,7 +109,40 @@ pub struct Queue {
     pub prebuffer: usize,
 }
 
-fn start_stream(shared: Arc<Shared>) -> Result<(cpal::Stream, u32), String> {
+/// Holds the stream until stop, rebuilding it on the default device when the
+/// device goes away, such as Bluetooth headphones switched off. The queue stays,
+/// so playback goes on where it was.
+fn keep_playing(stream: &mut Option<cpal::Stream>, rate: u32, shared: &Arc<Shared>, lost: &Arc<AtomicBool>, stop: &mpsc::Receiver<()>) {
+    loop {
+        match stop.recv_timeout(Duration::from_millis(500)) {
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            _ => return,
+        }
+        if !lost.load(Ordering::Acquire) {
+            continue;
+        }
+        *stream = None;
+        lost.store(false, Ordering::Release);
+        match start_stream(shared.clone(), lost.clone()) {
+            // The queue holds audio at the old rate; the next station picks
+            // the new one up.
+            Ok((s, new_rate)) if new_rate == rate => {
+                log!("audio output: reopened");
+                *stream = s;
+            }
+            Ok((_, new_rate)) => {
+                log!("audio output: the new device runs at {new_rate} Hz, not {rate} Hz; retrying");
+                lost.store(true, Ordering::Release);
+            }
+            Err(e) => {
+                log!("audio output: {e}; retrying");
+                lost.store(true, Ordering::Release);
+            }
+        }
+    }
+}
+
+fn start_stream(shared: Arc<Shared>, lost: Arc<AtomicBool>) -> Result<(Option<cpal::Stream>, u32), String> {
     let host = cpal::default_host();
     let device = host.default_output_device().ok_or("no audio output device")?;
     let supported = device.default_output_config().map_err(|e| e.to_string())?;
@@ -114,17 +150,22 @@ fn start_stream(shared: Arc<Shared>) -> Result<(cpal::Stream, u32), String> {
     let config: StreamConfig = supported.into();
     log!("audio output: {:?} {:?} {} Hz, {} channels", device.id().ok(), format, config.sample_rate, config.channels);
     let stream = match format {
-        SampleFormat::F32 => build::<f32>(&device, &config, shared),
-        SampleFormat::I16 => build::<i16>(&device, &config, shared),
-        SampleFormat::U16 => build::<u16>(&device, &config, shared),
-        SampleFormat::I32 => build::<i32>(&device, &config, shared),
+        SampleFormat::F32 => build::<f32>(&device, &config, shared, lost),
+        SampleFormat::I16 => build::<i16>(&device, &config, shared, lost),
+        SampleFormat::U16 => build::<u16>(&device, &config, shared, lost),
+        SampleFormat::I32 => build::<i32>(&device, &config, shared, lost),
         other => return Err(format!("unsupported output sample format {other}")),
     }?;
     stream.play().map_err(|e| e.to_string())?;
-    Ok((stream, config.sample_rate))
+    Ok((Some(stream), config.sample_rate))
 }
 
-fn build<T>(device: &cpal::Device, config: &StreamConfig, shared: Arc<Shared>) -> Result<cpal::Stream, String>
+fn build<T>(
+    device: &cpal::Device,
+    config: &StreamConfig,
+    shared: Arc<Shared>,
+    lost: Arc<AtomicBool>,
+) -> Result<cpal::Stream, String>
 where
     T: SizedSample + FromSample<f32>,
 {
@@ -177,7 +218,14 @@ where
             c.commit_all();
         }
     };
-    device
-        .build_output_stream(config.clone(), callback, |e| log!("audio output: {e}"), None)
-        .map_err(|e| e.to_string())
+    // A broken stream repeats its error until it is dropped, so only the
+    // first one is logged.
+    let on_error = move |e: cpal::Error| {
+        if matches!(e.kind(), ErrorKind::DeviceChanged | ErrorKind::Xrun | ErrorKind::RealtimeDenied) {
+            log!("audio output: {e}");
+        } else if !lost.swap(true, Ordering::AcqRel) {
+            log!("audio output: {e}; reopening");
+        }
+    };
+    device.build_output_stream(config.clone(), callback, on_error, None).map_err(|e| e.to_string())
 }

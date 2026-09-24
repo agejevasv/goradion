@@ -7,6 +7,7 @@ edition = "2024"
 audioadapter-buffers = "5.2"
 cpal = "0.18.2"
 csv = "1.4.0"
+opus-rs = "0.1.34"
 qrcode = { version = "0.14.1", default-features = false }
 rand = "0.10.3"
 ratatui = "0.30.2"

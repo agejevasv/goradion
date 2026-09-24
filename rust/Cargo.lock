@@ -681,6 +681,7 @@ dependencies = [
  "audioadapter-buffers",
  "cpal",
  "csv",
+ "opus-rs",
  "qrcode",
  "rand 0.10.3",
  "ratatui",
@@ -1326,6 +1327,12 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "opus-rs"
+version = "0.1.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3466ef5916cdb1236840f7b8ac018bfbdbba8bbdd141a0a9f2814c9aac8b9c96"
 
 [[package]]
 name = "ordered-float"

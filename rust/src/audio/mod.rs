@@ -1,5 +1,6 @@
 //! Native radio playback: HTTP streams, decoding, output and metering.
 
+mod codec;
 pub mod decode;
 pub mod http;
 pub mod meter;

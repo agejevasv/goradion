@@ -17,20 +17,21 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] HTTP(S) stream: redirects, timeouts, `ICY 200 OK`
 - [x] Playlists: `.pls`, `.m3u` (by content type or extension)
 - [x] ICY metadata: strip blocks, `StreamTitle` → song
-- [ ] Ogg/FLAC/Vorbis comments → `Artist - Title` (coded, no title seen yet on the two FLAC stations)
+- [x] Ogg/FLAC/Vorbis/Opus comments → `Artist - Title` (the two FLAC stations send none)
 - [x] Decode MP3, AAC-LC, FLAC, Vorbis
-- [ ] Decode Opus (libopus, static)
-- [x] HE-AAC plays (core only until SBR exists)
+- [x] Decode Opus (opus-rs, pure Rust: 85 dB SNR against libopus, ~0.3% CPU)
+- [x] HE-AAC plays (core only)
+- [ ] HE-AAC with SBR: syom 0.6 decodes it but refuses the rate change when joining a stream midway
 - [x] Output via cpal, resampled to the device rate (PulseAudio null sink: real time, ~2% CPU)
-- [ ] States: idle, buffering, playing, stopped, failed (retry with backoff 1s…30s), unsupported (no retry), no device
+- [x] States: idle, buffering, playing, stopped, failed (retry with backoff 1s…30s), unsupported (no retry)
 - [x] Volume 0–100 (mpv's cubic curve), fades
 - [x] Bitrate
 - [x] Song history (20)
 - [x] Level meter (RMS, -32 dBFS floor)
 - [x] Spectrum: 12 bands, 40 Hz – 12 kHz, tilt and floor as in Go
-- [ ] Recover from device loss (Bluetooth headphones off)
+- [x] Recover from device loss (tried by restarting PulseAudio mid-stream)
 - [x] `-c`: play a few seconds of every station through the engine, report codec and failures
-- [ ] Legacy TLS servers (HiOnLine Classic fails the rustls handshake; mpv plays it)
+- [ ] Legacy TLS servers: HiOnLine Classic only offers RSA key exchange, which rustls refuses; mpv plays it
 
 ## App
 
