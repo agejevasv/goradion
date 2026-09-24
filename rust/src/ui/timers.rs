@@ -42,8 +42,6 @@ pub struct Sleep {
     pub total: Duration,
     end: Option<Instant>,
     fade: Option<Duration>,
-    /// The volume to put back once the fade is over or cancelled.
-    restore: Option<i32>,
 }
 
 impl Sleep {
@@ -114,12 +112,11 @@ impl App {
     pub(super) fn cancel_sleep(&mut self) {
         self.sleep.total = Duration::ZERO;
         self.sleep.end = None;
-        if let Some(volume) = self.sleep.restore.take() {
-            self.player.set_volume(volume);
-        }
+        self.player.set_fade(1.0);
     }
 
-    /// Fades out over the last minute, then stops and puts the volume back.
+    /// Fades out over the last minute, then stops. The volume stays as set,
+    /// and can still be changed while it fades.
     fn tick_sleep(&mut self, now: Instant) {
         if !self.sleep.active() {
             return;
@@ -129,16 +126,15 @@ impl App {
         if remaining > fade {
             return;
         }
-        if self.sleep.restore.is_none() {
-            self.stop_shuffle();
-            self.sleep.restore = Some(self.player.snapshot().volume);
-        }
-        let from = self.sleep.restore.unwrap_or_default();
-        let t = remaining.as_secs_f64() / fade.as_secs_f64().max(1e-9);
-        self.player.set_volume((from as f64 * t).round() as i32);
+        // A new station now would cut into the fade.
+        self.stop_shuffle();
         if remaining.is_zero() {
+            // Silent before the fade goes back up.
+            self.player.stop();
             self.stop();
+            return;
         }
+        self.player.set_fade((remaining.as_secs_f64() / fade.as_secs_f64().max(1e-9)) as f32);
     }
 }
 
@@ -147,7 +143,7 @@ mod tests {
     use super::super::tests::test_app;
     use super::super::{StationRow, TagRef};
     use super::*;
-    use crate::audio::player::DEFAULT_VOLUME;
+    use crate::audio::player::{DEFAULT_VOLUME, VOLUME_STEP};
 
     fn url(a: &App) -> String {
         a.player.snapshot().url
@@ -227,24 +223,30 @@ mod tests {
         let end = now + SLEEP_STEPS[0];
         a.tick(end.checked_sub(SLEEP_FADE / 2).unwrap());
         assert!(!a.shuffle.active, "shuffle still on");
-        assert_eq!(volume(&a), DEFAULT_VOLUME / 2);
+        assert!((a.player.fade() - 0.5).abs() < 1e-3, "fade {}", a.player.fade());
+        assert_eq!(volume(&a), DEFAULT_VOLUME, "the volume bar stays");
         a.tick(end);
         assert_eq!(url(&a), "", "still playing");
         assert_eq!(volume(&a), DEFAULT_VOLUME);
+        assert!((a.player.fade() - 1.0).abs() < f32::EPSILON, "ready for the next station");
         assert!(!a.sleep.active());
     }
 
     #[test]
-    fn sleep_cancel_restores_volume() {
+    fn sleep_cancel_ends_the_fade() {
         let (mut a, _dir) = test_app();
         a.open_tag(TagRef::new(super::super::ALL_STATIONS_TAG));
         a.toggle_play_manual(a.listed[0].clone());
         let now = Instant::now();
         a.cycle_sleep(now);
         a.tick((now + SLEEP_STEPS[0]).checked_sub(SLEEP_FADE / 4).unwrap());
-        assert!(volume(&a) < DEFAULT_VOLUME);
+        assert!(a.player.fade() < 0.5);
+        // The volume can be changed during the fade.
+        a.change_volume(-VOLUME_STEP);
+        a.tick((now + SLEEP_STEPS[0]).checked_sub(SLEEP_FADE / 5).unwrap());
+        assert_eq!(volume(&a), DEFAULT_VOLUME - VOLUME_STEP);
         a.cycle_sleep(now); // 30 minutes: starts over
-        assert_eq!(volume(&a), DEFAULT_VOLUME);
+        assert!((a.player.fade() - 1.0).abs() < f32::EPSILON);
         assert!(!url(&a).is_empty());
     }
 }

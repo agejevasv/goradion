@@ -30,6 +30,8 @@ pub struct Output {
 struct Shared {
     mixer: Mutex<Mixer>,
     gain: AtomicU32,
+    /// A second gain for fades that leave the volume alone, 0 to 1.
+    fade: AtomicU32,
     readings: Readings,
 }
 
@@ -38,6 +40,7 @@ impl Shared {
         Arc::new(Shared {
             mixer: Mutex::new(Mixer::new(rate)),
             gain: AtomicU32::new(0f32.to_bits()),
+            fade: AtomicU32::new(1f32.to_bits()),
             readings: Readings::default(),
         })
     }
@@ -96,6 +99,15 @@ impl Output {
     pub fn set_volume(&self, volume: i32) {
         let gain = (volume.clamp(0, 100) as f32 / 100.0).powi(3);
         self.shared.gain.store(gain.to_bits(), Ordering::Relaxed);
+    }
+
+    pub fn set_fade(&self, fade: f32) {
+        self.shared.fade.store(fade.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    pub fn fade(&self) -> f32 {
+        f32::from_bits(self.shared.fade.load(Ordering::Relaxed))
     }
 
     pub fn readings(&self) -> &Readings {
@@ -184,7 +196,8 @@ where
     let mut gain = 0f32;
     let mut mixed: Vec<f32> = Vec::new();
     let callback = move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-        let target = f32::from_bits(shared.gain.load(Ordering::Relaxed));
+        let target =
+            f32::from_bits(shared.gain.load(Ordering::Relaxed)) * f32::from_bits(shared.fade.load(Ordering::Relaxed));
         let frames = data.len() / channels;
         // Sized once for the device's block; this only allocates if it grows.
         mixed.resize(frames * 2, 0.0);

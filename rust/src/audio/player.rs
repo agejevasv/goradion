@@ -214,6 +214,17 @@ impl Player {
         self.inner.notify();
     }
 
+    /// Fades the output between silent (0) and the volume (1), leaving the
+    /// volume as it is.
+    pub fn set_fade(&self, fade: f32) {
+        self.inner.output.set_fade(fade);
+    }
+
+    #[cfg(test)]
+    pub fn fade(&self) -> f32 {
+        self.inner.output.fade()
+    }
+
     /// The level between 0 and 1, and when it was measured.
     pub fn level(&self) -> Option<(f64, SystemTime)> {
         self.inner.output.readings().level()
