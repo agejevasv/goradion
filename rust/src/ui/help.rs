@@ -41,6 +41,7 @@ fn lines(look: &Look) -> Vec<Vec<Seg>> {
             "More",
             vec![
                 ("?", "this help"),
+                ("Ctrl+P", "control goradion from your phone"),
                 ("Ctrl+T", "colour theme"),
                 ("Mouse", "click a station to play it, scroll lists; scroll or click the volume gauge"),
                 ("", "click the sleep countdown to turn the timer off"),
@@ -48,7 +49,7 @@ fn lines(look: &Look) -> Vec<Vec<Seg>> {
             ],
         ),
     ];
-    let mut out = vec![vec![seg(format!("goradion {}", env!("CARGO_PKG_VERSION")), t.accent().add_modifier(Modifier::BOLD))]];
+    let mut out = vec![vec![seg(crate::version_string(), t.accent().add_modifier(Modifier::BOLD))]];
     for (title, keys) in sections {
         out.push(Vec::new());
         out.push(vec![seg(title, t.text().add_modifier(Modifier::BOLD))]);

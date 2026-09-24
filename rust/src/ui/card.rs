@@ -15,7 +15,6 @@ use crate::audio::player::{Info, State, Track};
 pub const HEIGHT: u16 = 5; // borders and three rows
 const GLOW_PERIOD: Duration = Duration::from_secs(2);
 const VOLUME_FLASH: Duration = Duration::from_millis(1500);
-const VU_CELLS: usize = 12;
 const VU_FALL_PER_SEC: f64 = 1.4;
 const VU_PEAK_HOLD: Duration = Duration::from_secs(1);
 const VU_STALE: Duration = Duration::from_millis(700);
@@ -466,7 +465,7 @@ mod tests {
         let now = SystemTime::now();
         let mut card = Card::new(true);
         let mut inf = playing("New - Song");
-        let track = |song: &str| Track { time: now, station: "Groove".into(), song: song.into() };
+        let track = |song: &str| Track { song: song.into() };
         inf.history = Arc::new(vec![track("Old - Song"), track("New - Song")]);
         card.update(inf, now);
         let f = card.render(&look(), now, 70, &Extras::default());

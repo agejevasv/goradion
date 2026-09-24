@@ -47,8 +47,6 @@ impl State {
 
 #[derive(Clone, Debug)]
 pub struct Track {
-    pub time: SystemTime,
-    pub station: String,
     pub song: String,
 }
 
@@ -326,7 +324,7 @@ impl Inner {
                 info.song = song.clone();
                 info.prev_song = song.clone();
                 let mut history: Vec<Track> = info.history.iter().rev().take(HISTORY_SIZE - 1).rev().cloned().collect();
-                history.push(Track { time: SystemTime::now(), station: info.station.clone(), song });
+                history.push(Track { song });
                 info.history = Arc::new(history);
             }
         });

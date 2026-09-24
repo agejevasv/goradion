@@ -27,8 +27,6 @@ pub struct Glyphs {
     pub gauge_full: &'static str,
     pub gauge_half: &'static str,
     pub gauge_empty: &'static str,
-    pub vu_lit: &'static [&'static str],
-    pub vu_unlit: &'static [&'static str],
     /// Spectrum bars, from quiet to full.
     pub bands: &'static [&'static str],
     /// Box corners and lines: top-left, top-right, bottom-left, bottom-right,
@@ -61,8 +59,6 @@ pub const UNICODE: Glyphs = Glyphs {
     gauge_full: "━",
     gauge_half: "╸",
     gauge_empty: "─",
-    vu_lit: &["▁", "▂", "▂", "▃", "▃", "▄", "▅", "▅", "▆", "▆", "▇", "█"],
-    vu_unlit: &["▁", "▂", "▂", "▃", "▃", "▄", "▅", "▅", "▆", "▆", "▇", "█"],
     bands: &["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"],
     border: ["╭", "╮", "╰", "╯", "─", "│"],
 };
@@ -92,8 +88,6 @@ pub const ASCII: Glyphs = Glyphs {
     gauge_full: "=",
     gauge_half: "",
     gauge_empty: "-",
-    vu_lit: &["|"; 12],
-    vu_unlit: &["."; 12],
     bands: &[".", ":", "|", "#"],
     border: ["+", "+", "+", "+", "-", "|"],
 };

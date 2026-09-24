@@ -48,7 +48,7 @@ impl App {
         }
     }
 
-    fn tag_exists(&self, tag: &TagRef) -> bool {
+    pub(super) fn tag_exists(&self, tag: &TagRef) -> bool {
         if tag.search {
             return self.last_search.as_ref().is_some_and(|l| !tag.name.is_empty() && l.query == tag.name);
         }

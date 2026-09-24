@@ -4,6 +4,7 @@ mod card;
 pub mod glyphs;
 mod help;
 mod list;
+mod remote;
 mod search;
 mod session;
 mod text;
@@ -37,11 +38,16 @@ use list::{ListState, Pane, Row, matches};
 use text::{Seg, draw_segs, seg, segs_width};
 use theme::Theme;
 
+pub use remote::RemoteSettings;
+pub(crate) use search::{online_meta, search_stations};
+
 const WIDE_MIN_WIDTH: u16 = 100;
 const TAGS_PANE_MIN_WIDTH: u16 = 26;
 const TAGS_PANE_MAX_WIDTH: u16 = 40;
 const FRAME_INTERVAL: Duration = Duration::from_millis(50);
 const IDLE_INTERVAL: Duration = Duration::from_millis(250);
+/// How often phone requests are answered when nothing else wakes the loop.
+const REMOTE_INTERVAL: Duration = Duration::from_millis(100);
 
 const BOOKMARKS_TAG: &str = "Bookmarks";
 const ALL_STATIONS_TAG: &str = "All Stations";
@@ -54,11 +60,17 @@ pub struct Look {
 pub struct Options {
     pub ascii: bool,
     pub vu: bool,
+    /// -r: Some(None) keeps the configured key.
+    pub remote: Option<Option<String>>,
+    /// -p
+    pub remote_port: Option<u16>,
 }
 
 enum Modal {
     Theme(ListState),
     Search(Box<search::Search>),
+    /// The error when the server could not start.
+    Remote(Option<String>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -130,6 +142,8 @@ pub struct App {
     sleep: timers::Sleep,
     modal: Option<Modal>,
     modal_area: Rect,
+    remote: Option<(crate::remote::Server, std::sync::mpsc::Receiver<crate::remote::Call>)>,
+    remote_settings: RemoteSettings,
     /// The terminal's default background as last set by sync_term_bg.
     term_bg: ratatui::style::Color,
 
@@ -158,6 +172,14 @@ impl App {
         });
         let g = if opts.ascii { &glyphs::ASCII } else { &glyphs::UNICODE };
         let listed = stations.clone();
+        let remote_settings = RemoteSettings {
+            autostart: config.remote.autostart || opts.remote.is_some(),
+            port: opts.remote_port.unwrap_or(config.remote.port),
+            key: match &opts.remote {
+                Some(Some(key)) => Some(key.clone()),
+                _ => config.remote.key.clone(),
+            },
+        };
         let mut app = App {
             player,
             stations,
@@ -184,6 +206,8 @@ impl App {
             sleep: timers::Sleep::default(),
             modal: None,
             modal_area: Rect::default(),
+            remote: None,
+            remote_settings,
             term_bg: ratatui::style::Color::Reset,
             config,
         };
@@ -192,6 +216,13 @@ impl App {
     }
 
     pub fn run(mut self) -> io::Result<()> {
+        if self.remote_settings.autostart {
+            if let Err(e) = self.start_remote() {
+                // The window retries and shows the error.
+                crate::log!("remote: {e}");
+                self.toggle_remote_modal();
+            }
+        }
         let mut terminal = ratatui::init();
         execute!(io::stdout(), EnableMouseCapture)?;
         let result = self.event_loop(&mut terminal);
@@ -202,6 +233,7 @@ impl App {
         self.cancel_sleep();
         self.stop_shuffle();
         self.save_session();
+        self.remote = None;
         result
     }
 
@@ -209,6 +241,7 @@ impl App {
         while !self.quit {
             self.tick(Instant::now());
             self.poll_search();
+            self.poll_remote();
             self.sync_term_bg();
             let now = SystemTime::now();
             self.card.update(self.player.snapshot(), now);
@@ -218,7 +251,13 @@ impl App {
                 self.draw(f.buffer_mut(), area, now);
             })?;
             let busy = self.card.animating(now, &self.extras()) || self.searching();
-            let wait = if busy { FRAME_INTERVAL } else { IDLE_INTERVAL };
+            let wait = if busy {
+                FRAME_INTERVAL
+            } else if self.remote.is_some() {
+                REMOTE_INTERVAL
+            } else {
+                IDLE_INTERVAL
+            };
             if event::poll(wait)? {
                 // Handle everything queued before the next frame.
                 loop {
@@ -472,12 +511,23 @@ impl App {
         match self.modal {
             Some(Modal::Theme(_)) => return self.on_theme_key(k),
             Some(Modal::Search(_)) => return self.on_search_key(k),
+            Some(Modal::Remote(_)) => {
+                match k.code {
+                    KeyCode::Esc => self.modal = None,
+                    KeyCode::Char('p') if ctrl => self.modal = None,
+                    KeyCode::Left => self.change_volume(-VOLUME_STEP),
+                    KeyCode::Right => self.change_volume(VOLUME_STEP),
+                    _ => {}
+                }
+                return;
+            }
             None => {}
         }
         match k.code {
             KeyCode::Char('t') if ctrl => self.show_theme_modal(),
             KeyCode::Char('f') if ctrl => self.show_search_modal(false),
             KeyCode::Char('s') if ctrl => self.show_search_modal(true),
+            KeyCode::Char('p') if ctrl => self.toggle_remote_modal(),
             KeyCode::Char('b') if ctrl => self.toggle_bookmark(),
             KeyCode::Char('r') if ctrl => self.toggle_shuffle(Instant::now()),
             KeyCode::Char('z') if ctrl => self.cycle_sleep(Instant::now()),
@@ -614,6 +664,7 @@ impl App {
         match self.modal {
             Some(Modal::Theme(_)) => return self.on_theme_mouse(m),
             Some(Modal::Search(_)) => return self.on_search_mouse(m),
+            Some(Modal::Remote(_)) => return,
             None => {}
         }
         let pos = Position::new(m.column, m.row);
@@ -727,6 +778,7 @@ impl App {
         match self.modal {
             Some(Modal::Theme(_)) => self.draw_theme_modal(buf, body),
             Some(Modal::Search(_)) => self.draw_search_modal(buf, area),
+            Some(Modal::Remote(_)) => self.draw_remote_modal(buf, area),
             None => {}
         }
     }
@@ -821,6 +873,7 @@ impl App {
         match self.modal {
             Some(Modal::Theme(_)) => return vec![("↑ ↓", "preview"), ("enter", "apply"), ("esc", "cancel")],
             Some(Modal::Search(_)) => return self.search_hints(),
+            Some(Modal::Remote(_)) => return vec![("esc", "close")],
             None => {}
         }
         let filtering = match self.page {
@@ -839,6 +892,7 @@ impl App {
                     ("^F", "search"),
                     ("^R", "shuffle"),
                     ("^Z", "sleep"),
+                    ("^P", "phone"),
                     ("^T", "theme"),
                     ("?", "help"),
                 ];
@@ -852,6 +906,7 @@ impl App {
                 ("^F", "search"),
                 ("^R", "shuffle"),
                 ("^Z", "sleep"),
+                ("^P", "phone"),
                 ("^T", "theme"),
                 ("?", "help"),
                 ("esc", "quit"),
@@ -925,7 +980,7 @@ pub(crate) mod tests {
         let stations = crate::stations::load("").unwrap();
         let bookmarks = Bookmarks::load_from(dir.join("bookmarks.json"), &stations);
         let config = Config::load_from(dir.join("config.yaml"));
-        let opts = Options { ascii: false, vu: true };
+        let opts = Options { ascii: false, vu: true, remote: None, remote_port: None };
         (App::new(Player::offline(), stations, bookmarks, config, &opts), dir)
     }
 

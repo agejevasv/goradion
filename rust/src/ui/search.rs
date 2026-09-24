@@ -42,7 +42,7 @@ struct Found {
 
 /// The stations whose title or tags contain every word of the query,
 /// ignoring case.
-pub(super) fn search_stations(stations: &[Station], query: &str) -> Vec<Station> {
+pub(crate) fn search_stations(stations: &[Station], query: &str) -> Vec<Station> {
     let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
     if words.is_empty() {
         return Vec::new();
@@ -57,7 +57,7 @@ pub(super) fn search_stations(stations: &[Station], query: &str) -> Vec<Station>
         .collect()
 }
 
-fn online_meta(r: &OnlineStation) -> String {
+pub(crate) fn online_meta(r: &OnlineStation) -> String {
     let mut parts = Vec::new();
     if !r.country_code.is_empty() {
         parts.push(r.country_code.clone());
@@ -215,6 +215,7 @@ impl App {
         let Some(s) = self.search_modal() else { return };
         match k.code {
             KeyCode::Esc => self.modal = None,
+            KeyCode::Char('p') if ctrl => self.toggle_remote_modal(),
             KeyCode::Char('f') if ctrl => self.show_search_modal(false),
             KeyCode::Char('s') if ctrl => self.show_search_modal(true),
             KeyCode::Char('b') if ctrl => self.toggle_bookmark(),

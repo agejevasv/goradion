@@ -43,8 +43,8 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] Wide layout (tags and stations side by side), `Tab`
 - [x] Now playing card: station, song, previous song, status, spinner, live glow
 - [x] Gauges: volume, spectrum
-- [ ] Mouse on the volume gauge (coded, not tried)
-- [ ] Mouse: click to play, wheel scrolls (coded, not tried)
+- [x] Mouse on the volume gauge
+- [x] Mouse: click to play, wheel scrolls
 - [x] Random station (`*`), shuffle (`Ctrl+R`, `Alt+1`–`9`)
 - [x] Sleep timer (`Ctrl+Z`), fade out, click countdown to cancel
 - [x] Bookmarks (`Ctrl+B`), saved to file
@@ -55,7 +55,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] `--no-vu`
 - [x] Config YAML: defaults, save `volume`/`tag`/`station`/`theme` keeping layout and comments
 - [x] Session restore, `autoplay`
-- [ ] Remote: web server, access code, QR modal (`Ctrl+P`), `-r [key]`, `-p`, same API and page
+- [x] Remote: web server, access code, QR modal (`Ctrl+P`), `-r [key]`, `-p`, same API and page
 - [x] Debug log (`-d`), version (`-v`)
 
 ## Release
