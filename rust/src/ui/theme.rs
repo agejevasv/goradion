@@ -709,7 +709,7 @@ mod tests {
         assert_eq!(THEMES.len(), 43);
         assert_eq!(THEMES[0].name, DEFAULT_THEME);
         let mut names: Vec<_> = names().collect();
-        names.sort();
+        names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), THEMES.len());
     }

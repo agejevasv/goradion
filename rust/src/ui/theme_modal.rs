@@ -147,7 +147,7 @@ impl App {
             _ => "\x1b]111\x1b\\".to_string(),
         };
         let mut out = std::io::stdout();
-        if let Err(e) = out.write_all(seq.as_bytes()).and_then(|_| out.flush()) {
+        if let Err(e) = out.write_all(seq.as_bytes()).and_then(|()| out.flush()) {
             log!("terminal background: {e}");
         }
         self.term_bg = bg;

@@ -46,13 +46,13 @@ fn main() -> ExitCode {
             // A value starting with "-" must be joined with "=".
             "-r" => remote = Some(args.next_if(|a| !a.starts_with('-'))),
             a if a.starts_with("-r=") => remote = Some(Some(a["-r=".len()..].to_string())),
-            "-p" => match args.next().and_then(|p| p.parse().ok()) {
-                Some(p) => remote_port = Some(p),
-                None => {
+            "-p" => {
+                let Some(p) = args.next().and_then(|p| p.parse().ok()) else {
                     eprintln!("{USAGE}");
                     return ExitCode::FAILURE;
-                }
-            },
+                };
+                remote_port = Some(p);
+            }
             "--play" => play = args.next(),
             "-ascii" | "--ascii" => ascii = true,
             "-no-vu" | "--no-vu" => vu = false,

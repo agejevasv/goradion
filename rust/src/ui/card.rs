@@ -285,6 +285,7 @@ impl Card {
     }
 
     fn gauges(&self, look: &Look, now: SystemTime, w: usize, extras: &Extras, f: &mut Frame) -> Vec<Seg> {
+        const VOL_LABEL: &str = "vol ";
         let t = &look.t;
         let (fill, pct) = if before(now, self.flash_until) {
             let bright = t.fg(t.bright).add_modifier(Modifier::BOLD);
@@ -293,7 +294,6 @@ impl Card {
             (t.accent(), t.text())
         };
 
-        const VOL_LABEL: &str = "vol ";
         let half = if extras.shuffle.is_some() { w.saturating_sub(3) / 2 } else { w };
         let vol_gauge = half.saturating_sub(VOL_LABEL.len() + 5).clamp(4, 30);
         let mut row = vec![seg(VOL_LABEL, t.dim())];
@@ -390,7 +390,7 @@ fn follow(current: f64, target: f64, dt: f64) -> f64 {
     if target >= current { target } else { target.max(current - VU_FALL_PER_SEC * dt) }
 }
 
-/// Fades the dot from the live colour to dim and back once per GLOW_PERIOD.
+/// Fades the dot from the live colour to dim and back once per `GLOW_PERIOD`.
 /// The terminal's own colours can't be blended, so there it blinks.
 fn live_glow(look: &Look, now: SystemTime) -> Color {
     let t = &look.t;

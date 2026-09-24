@@ -57,7 +57,7 @@ impl App {
         loop {
             let Some((_, calls)) = &self.remote else { return };
             let Ok(call) = calls.try_recv() else { return };
-            let result = self.remote_action(call.action, &call.req).map(|_| self.remote_state());
+            let result = self.remote_action(call.action, &call.req).map(|()| self.remote_state());
             let _ = call.reply.send(result);
         }
     }

@@ -197,7 +197,7 @@ where
                 chunk = c.read_chunk(n).ok();
             }
         }
-        let (first, second) = chunk.as_ref().map_or((&[][..], &[][..]), |c| c.as_slices());
+        let (first, second) = chunk.as_ref().map_or((&[][..], &[][..]), rtrb::chunks::ReadChunk::as_slices);
         let mut samples = first.iter().chain(second).copied();
 
         for frame in data.chunks_exact_mut(channels) {
@@ -211,7 +211,7 @@ where
             gain += (target - gain) * GAIN_SMOOTHING;
             let (l, r) = (l * gain, r * gain);
             match frame {
-                [mono] => *mono = T::from_sample(0.5 * (l + r)),
+                [mono] => *mono = T::from_sample(f32::midpoint(l, r)),
                 [left, right, rest @ ..] => {
                     *left = T::from_sample(l);
                     *right = T::from_sample(r);

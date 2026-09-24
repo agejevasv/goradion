@@ -203,12 +203,12 @@ impl App {
                     Phase::FadingIn(fade)
                 }
             }
-            waiting => waiting,
+            waiting @ Phase::Waiting => waiting,
         };
         self.shuffle.phase = next;
     }
 
-    /// Steps through SLEEP_STEPS, then off. Does nothing while nothing plays.
+    /// Steps through `SLEEP_STEPS`, then off. Does nothing while nothing plays.
     pub(super) fn cycle_sleep(&mut self, now: Instant) {
         let next = next_sleep(self.sleep.total);
         if !self.sleep.active() && self.player.snapshot().url.is_empty() {
@@ -354,7 +354,7 @@ mod tests {
         a.toggle_shuffle(now);
         a.cycle_sleep(now);
         let end = now + SLEEP_STEPS[0];
-        a.tick(end - SLEEP_FADE / 2);
+        a.tick(end.checked_sub(SLEEP_FADE / 2).unwrap());
         assert!(!a.shuffle.active, "shuffle still on");
         assert_eq!(volume(&a), DEFAULT_VOLUME / 2);
         a.tick(end);
@@ -370,7 +370,7 @@ mod tests {
         a.toggle_play_manual(a.listed[0].clone());
         let now = Instant::now();
         a.cycle_sleep(now);
-        a.tick(now + SLEEP_STEPS[0] - SLEEP_FADE / 4);
+        a.tick((now + SLEEP_STEPS[0]).checked_sub(SLEEP_FADE / 4).unwrap());
         assert!(volume(&a) < DEFAULT_VOLUME);
         a.cycle_sleep(now); // 30 minutes: starts over
         assert_eq!(volume(&a), DEFAULT_VOLUME);

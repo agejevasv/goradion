@@ -220,13 +220,12 @@ fn handle(req: Request, shared: &Shared) {
     let response = match (&method, path.as_str()) {
         (Method::Get, "/") => html(PAGE),
         (_, "/favicon.ico") => Response::from_string("").with_status_code(204),
+        (_, p) if p.starts_with("/api/") && authorized(shared, &req, &query) => {
+            api(req, shared, method, &path, &query);
+            return;
+        }
         (_, p) if p.starts_with("/api/") => {
-            if !authorized(shared, &req, &query) {
-                text(403, "Forbidden: wrong access code. The code is shown by goradion when you press Ctrl+P.")
-            } else {
-                api(req, shared, method, &path, &query);
-                return;
-            }
+            text(403, "Forbidden: wrong access code. The code is shown by goradion when you press Ctrl+P.")
         }
         _ => text(404, "404 page not found"),
     };
@@ -358,7 +357,7 @@ pub fn new_token(n: usize) -> String {
 /// only resolves the route; nothing is sent.
 pub fn lan_ip() -> String {
     UdpSocket::bind("0.0.0.0:0")
-        .and_then(|s| s.connect("8.8.8.8:80").map(|_| s))
+        .and_then(|s| s.connect("8.8.8.8:80").map(|()| s))
         .and_then(|s| s.local_addr())
         .ok()
         .map(|a| a.ip())

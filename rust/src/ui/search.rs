@@ -398,7 +398,7 @@ mod tests {
         Station {
             title: title.into(),
             url: format!("http://{title}"),
-            tags: tags.iter().map(|t| t.to_string()).collect(),
+            tags: tags.iter().map(ToString::to_string).collect(),
         }
     }
 

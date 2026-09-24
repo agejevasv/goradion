@@ -28,7 +28,7 @@ pub fn segs_width(segs: &[Seg]) -> usize {
     segs.iter().map(|s| width(&s.text)).sum()
 }
 
-/// Draws segs from x, clipped to max_width cells; returns the cells used.
+/// Draws segs from x, clipped to `max_width` cells; returns the cells used.
 pub fn draw_segs(buf: &mut Buffer, x: u16, y: u16, max_width: usize, segs: &[Seg]) -> usize {
     let area = buf.area;
     if y < area.top() || y >= area.bottom() {
@@ -150,8 +150,7 @@ pub fn marquee(text: &str, w: usize, elapsed: Duration) -> String {
     let cycle = text_width + MARQUEE_GAP;
     let period = MARQUEE_PAUSE + MARQUEE_STEP * cycle as u32;
     let t = Duration::from_nanos((elapsed.as_nanos() % period.as_nanos()) as u64);
-    let offset =
-        if t >= MARQUEE_PAUSE { ((t - MARQUEE_PAUSE).as_nanos() / MARQUEE_STEP.as_nanos()) as usize } else { 0 };
+    let offset = (t.saturating_sub(MARQUEE_PAUSE).as_nanos() / MARQUEE_STEP.as_nanos()) as usize;
     let looped = format!("{text}{}{text}", " ".repeat(MARQUEE_GAP));
     slice_cells(&looped, offset, w)
 }

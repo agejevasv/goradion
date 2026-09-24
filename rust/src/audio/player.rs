@@ -139,6 +139,7 @@ impl Player {
 
     /// Plays url, or stops it when it is the one playing.
     pub fn play(&self, station: &str, url: &str) {
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let mut st = self.inner.lock();
         if url == st.info.url {
             self.inner.stop_locked(&mut st);
@@ -147,7 +148,6 @@ impl Player {
         if let Some(old) = st.session.take() {
             old.cancel.store(true, Ordering::Relaxed);
         }
-        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         let cancel = Arc::new(AtomicBool::new(false));
         st.session = Some(Session { id, cancel: cancel.clone(), retries: 0 });
@@ -217,7 +217,7 @@ impl Inner {
     }
 
     fn notify(&self) {
-        self.listeners.lock().unwrap().retain(|tx| !matches!(tx.try_send(()), Err(TrySendError::Disconnected(_))));
+        self.listeners.lock().unwrap().retain(|tx| !matches!(tx.try_send(()), Err(TrySendError::Disconnected(()))));
     }
 
     fn stop_locked(&self, st: &mut PlayerState) {
@@ -320,8 +320,8 @@ impl Inner {
             }
             if !song.is_empty() && song != info.prev_song {
                 info.set_state(State::Playing, "");
-                info.song = song.clone();
-                info.prev_song = song.clone();
+                info.song.clone_from(&song);
+                info.prev_song.clone_from(&song);
                 let mut history: Vec<Track> = info.history.iter().rev().take(HISTORY_SIZE - 1).rev().cloned().collect();
                 history.push(Track { song });
                 info.history = Arc::new(history);

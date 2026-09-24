@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use symphonia::core::errors::Error as SymError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
-use symphonia::core::io::{MediaSourceStream, ReadOnlySource};
+use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions, ReadOnlySource};
 use symphonia::core::meta::{MetadataOptions, MetadataRevision, StandardTag};
 
 use super::codec::{Decoder, Failure};
@@ -61,7 +61,7 @@ pub fn run(
     on_event: &mut dyn FnMut(Event),
 ) -> Result<(), DecodeError> {
     let reader = SyncReader(std::sync::Mutex::new(source.reader));
-    let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(reader)), Default::default());
+    let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(reader)), MediaSourceStreamOptions::default());
     let mut hint = Hint::new();
     if let Some(mime) = &source.mime {
         hint.mime_type(mime);
@@ -85,7 +85,7 @@ pub fn run(
         if let Some(title) = rev.and_then(song_title)
             && title != last_title
         {
-            last_title = title.clone();
+            last_title.clone_from(&title);
             on_event(Event::Title(title));
         }
     };
@@ -149,7 +149,7 @@ pub fn run(
 }
 
 /// Symphonia wants a Sync source; the Mutex provides it without locking, as
-/// reads go through get_mut.
+/// reads go through `get_mut`.
 struct SyncReader(std::sync::Mutex<Box<dyn std::io::Read + Send>>);
 
 impl std::io::Read for SyncReader {

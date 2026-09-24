@@ -5,6 +5,10 @@ on:
     branches: [rust-rewrite]
   pull_request:
     paths: ['rust/**', 'internal/radio/remote.html', '.github/workflows/rust.yml']
+  # New advisories appear without any change here.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
 
 defaults:
   run:
@@ -12,8 +16,27 @@ defaults:
     working-directory: rust
 
 jobs:
+  checks:
+    name: just check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Rust
+      run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+
+    - name: ALSA headers
+      run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: just,cargo-deny,cargo-machete
+
+    - run: just check
+
   build:
     name: ${{ matrix.target }}
+    if: github.event_name != 'schedule'
     strategy:
       fail-fast: false
       matrix:

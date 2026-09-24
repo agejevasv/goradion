@@ -3,8 +3,7 @@ use std::path::{Path, PathBuf};
 
 pub fn config_dir() -> PathBuf {
     let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
+        .map_or_else(|| PathBuf::from("."), PathBuf::from);
     if cfg!(windows) {
         home.join("AppData").join("Roaming").join("goradion")
     } else if cfg!(target_os = "macos") {

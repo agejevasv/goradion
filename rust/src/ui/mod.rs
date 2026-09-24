@@ -61,6 +61,7 @@ pub struct Options {
     pub ascii: bool,
     pub vu: bool,
     /// -r: Some(None) keeps the configured key.
+    #[allow(clippy::option_option)]
     pub remote: Option<Option<String>>,
     /// -p
     pub remote_port: Option<u16>,
@@ -151,7 +152,7 @@ pub struct App {
     modal_area: Rect,
     remote: Option<(crate::remote::Server, std::sync::mpsc::Receiver<crate::remote::Call>)>,
     remote_settings: RemoteSettings,
-    /// The terminal's default background as last set by sync_term_bg.
+    /// The terminal's default background as last set by `sync_term_bg`.
     term_bg: ratatui::style::Color,
 
     tags_area: Rect,
@@ -427,15 +428,16 @@ impl App {
 
     /// Plays the station, or stops it when it is the one playing.
     fn toggle_play(&mut self, station: Station) {
-        if station.url != self.player.snapshot().url {
-            self.playing = Some((station.clone(), self.tag.clone()));
-        } else {
-            self.cancel_sleep();
-        }
+        let stopping = station.url == self.player.snapshot().url;
         self.player.play(&station.title, &station.url);
+        if stopping {
+            self.cancel_sleep();
+        } else {
+            self.playing = Some((station, self.tag.clone()));
+        }
     }
 
-    /// toggle_play for a station the user picked, which ends the shuffle.
+    /// `toggle_play` for a station the user picked, which ends the shuffle.
     fn toggle_play_manual(&mut self, station: Station) {
         self.stop_shuffle();
         self.toggle_play(station);
@@ -513,18 +515,15 @@ impl App {
     }
 
     fn filter_changed(&mut self) {
-        match self.page {
-            Page::Tags => {
-                self.tags_state.cursor = 0;
-                self.tags_state.offset = 0;
-                if self.wide {
-                    self.preview_tag_at_cursor();
-                }
+        if self.page == Page::Tags {
+            self.tags_state.cursor = 0;
+            self.tags_state.offset = 0;
+            if self.wide {
+                self.preview_tag_at_cursor();
             }
-            _ => {
-                self.stations_state.cursor = 0;
-                self.stations_state.offset = 0;
-            }
+        } else {
+            self.stations_state.cursor = 0;
+            self.stations_state.offset = 0;
         }
     }
 
@@ -558,7 +557,7 @@ impl App {
             KeyCode::Char('r') if ctrl => self.toggle_shuffle(Instant::now()),
             KeyCode::Char('z') if ctrl => self.cycle_sleep(Instant::now()),
             KeyCode::Char(c @ '1'..='9') if k.modifiers.contains(KeyModifiers::ALT) => {
-                self.set_shuffle_interval(c as u64 - '0' as u64, Instant::now())
+                self.set_shuffle_interval(c as u64 - '0' as u64, Instant::now());
             }
             KeyCode::Char(_) if ctrl || k.modifiers.contains(KeyModifiers::ALT) => {}
             KeyCode::Left => self.change_volume(-VOLUME_STEP),
@@ -566,17 +565,17 @@ impl App {
             _ if self.page == Page::Help => self.on_help_key(k),
             KeyCode::Esc => self.escape(),
             KeyCode::Tab | KeyCode::BackTab if self.wide => {
-                self.show(if self.page == Page::Tags { Page::Main } else { Page::Tags })
+                self.show(if self.page == Page::Tags { Page::Main } else { Page::Tags });
             }
             KeyCode::Up => self.move_cursor(-1),
             KeyCode::Down => self.move_cursor(1),
             KeyCode::PageUp => {
                 let page = self.focused_state().page();
-                self.move_cursor(-page)
+                self.move_cursor(-page);
             }
             KeyCode::PageDown => {
                 let page = self.focused_state().page();
-                self.move_cursor(page)
+                self.move_cursor(page);
             }
             KeyCode::Home => self.move_cursor(isize::MIN / 2),
             KeyCode::End => self.move_cursor(isize::MAX / 2),
@@ -641,14 +640,13 @@ impl App {
             }
             return;
         }
-        match self.page {
-            Page::Tags => self.quit = true,
-            _ => {
-                if !self.wide {
-                    self.tag = None;
-                }
-                self.show(Page::Tags);
+        if self.page == Page::Tags {
+            self.quit = true;
+        } else {
+            if !self.wide {
+                self.tag = None;
             }
+            self.show(Page::Tags);
         }
     }
 

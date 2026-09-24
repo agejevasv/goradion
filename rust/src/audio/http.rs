@@ -1,6 +1,7 @@
 //! A minimal HTTP/1.1 GET client for radio streams. General-purpose clients
 //! reject Shoutcast v1 servers, which answer `ICY 200 OK`.
 
+use std::fmt::Write as _;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::{Arc, OnceLock};
@@ -75,7 +76,7 @@ fn request(url: &Url, extra_headers: &[(&str, &str)]) -> io::Result<(u16, Respon
         env!("CARGO_PKG_VERSION")
     );
     for (k, v) in extra_headers {
-        req.push_str(&format!("{k}: {v}\r\n"));
+        let _ = write!(req, "{k}: {v}\r\n");
     }
     req.push_str("\r\n");
     conn.write_all(req.as_bytes())?;
@@ -190,8 +191,8 @@ impl<R: BufRead> Read for Chunked<R> {
     }
 }
 
-fn invalid(e: impl ToString) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, e.to_string())
+fn invalid(e: impl Into<Box<dyn std::error::Error + Send + Sync>>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, e)
 }
 
 #[cfg(test)]

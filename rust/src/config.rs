@@ -5,6 +5,7 @@
 //! nested mappings, comments and quoted strings. Anything else under a key
 //! goradion doesn't read is skipped; flow collections must close on their line.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use crate::audio::player::DEFAULT_VOLUME;
@@ -74,7 +75,7 @@ fn comment_lines(text: &str, width: usize) -> String {
     let mut line = String::new();
     for word in text.split_whitespace() {
         if !line.is_empty() && line.len() + 1 + word.len() > width {
-            out.push_str(&format!("#   {line}\n"));
+            let _ = writeln!(out, "#   {line}");
             line.clear();
         }
         if !line.is_empty() {
@@ -82,7 +83,7 @@ fn comment_lines(text: &str, width: usize) -> String {
         }
         line.push_str(word);
     }
-    out.push_str(&format!("#   {line}\n"));
+    let _ = writeln!(out, "#   {line}");
     out
 }
 
@@ -110,7 +111,7 @@ impl Config {
             Ok(text) => Ok(text),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 let text = default_text();
-                files::write_atomic(&path, text.as_bytes()).map(|_| text)
+                files::write_atomic(&path, text.as_bytes()).map(|()| text)
             }
             Err(e) => Err(e),
         };
@@ -162,7 +163,9 @@ impl Config {
                 _ => continue,
             };
             match entries.iter().find(|e| e.parent.is_none() && e.key == name) {
-                None => appended.push_str(&format!("{name}: {value}\n")),
+                None => {
+                    let _ = writeln!(appended, "{name}: {value}");
+                }
                 Some(e) if e.multiline => return Err(format!("{path}: {name} is not a one-line value")),
                 Some(e) => lines[e.line] = replace_value(&lines[e.line], e.colon, &value),
             }

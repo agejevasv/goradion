@@ -13,14 +13,14 @@ pub const BAND_COUNT: usize = 12;
 const BAND_FREQS: [f64; BAND_COUNT] =
     [40.0, 67.0, 113.0, 190.0, 318.0, 535.0, 898.0, 1508.0, 2533.0, 4254.0, 7145.0, 12000.0];
 
-/// Bars span SPECTRUM_FLOOR_DB to 0 dBFS. Band-limited RMS sits well below the
+/// Bars span `SPECTRUM_FLOOR_DB` to 0 dBFS. Band-limited RMS sits well below the
 /// overall level, and music carries less energy in the treble, so the tilt
-/// lowers the bass and raises the treble by half of SPECTRUM_TILT_DB each.
+/// lowers the bass and raises the treble by half of `SPECTRUM_TILT_DB` each.
 const SPECTRUM_FLOOR_DB: f64 = -50.0;
 const SPECTRUM_TILT_DB: f64 = 10.0;
 const LEVEL_FLOOR_DB: f64 = -32.0;
 
-/// Frames per reading, about what FFmpeg's astats saw per frame.
+/// Frames per reading, about what `FFmpeg`'s astats saw per frame.
 const WINDOW: usize = 1024;
 
 #[derive(Default)]
@@ -74,7 +74,7 @@ impl Meter {
         let (l, r) = (left as f64, right as f64);
         self.sum_left += l * l;
         self.sum_right += r * r;
-        let mono = 0.5 * (l + r);
+        let mono = f64::midpoint(l, r);
         for (sum, filter) in self.band_sums.iter_mut().zip(&mut self.filters) {
             let y = filter.process(mono);
             *sum += y * y;
@@ -124,7 +124,7 @@ pub fn band_level(band: usize, db: f64, rate: u32) -> f64 {
     (1.0 - (db + tilt) / SPECTRUM_FLOOR_DB).clamp(0.0, 1.0)
 }
 
-/// FFmpeg's `bandpass` with a one-octave width: the RBJ band-pass with 0 dB
+/// `FFmpeg`'s `bandpass` with a one-octave width: the RBJ band-pass with 0 dB
 /// peak gain.
 #[derive(Clone, Copy)]
 struct Biquad {
@@ -212,6 +212,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)] // clamped to exactly 0 or 1
     fn levels_match_go() {
         assert_eq!(level(f64::NAN), 0.0);
         assert_eq!(level(-40.0), 0.0);

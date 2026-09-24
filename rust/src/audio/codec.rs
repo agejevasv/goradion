@@ -2,6 +2,7 @@
 //! that symphonia demuxes but can't decode.
 
 use opus_rs::OpusDecoder;
+use symphonia::core::audio::Channels;
 use symphonia::core::codecs::audio::well_known::CODEC_ID_OPUS;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::errors::Error as SymError;
@@ -41,7 +42,7 @@ impl Decoder {
             .and_then(|p| p.audio())
             .ok_or_else(|| DecodeError::Unsupported("no audio parameters".into()))?;
         if params.codec == CODEC_ID_OPUS {
-            let channels = params.channels.as_ref().map_or(2, |c| c.count());
+            let channels = params.channels.as_ref().map_or(2, Channels::count);
             if !(1..=2).contains(&channels) {
                 return Err(DecodeError::Unsupported(format!("Opus with {channels} channels")));
             }
