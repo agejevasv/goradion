@@ -10,7 +10,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - Audio: symphonia (decode), cpal (output), rubato (resampling), biquad bands like FFmpeg's `bandpass` (spectrum)
 - Streams: own HTTP/1.1 client on rustls, because Shoutcast v1 answers `ICY 200 OK`
 - UI: ratatui + crossterm
-- Other: ureq (radio-browser, stations CSV), tiny_http (remote), qrcode
+- Other: the same HTTP client for radio-browser and the stations CSV, tiny_http (remote), qrcode
 
 ## Audio engine (`rust/src/audio`)
 
@@ -36,7 +36,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 
 - [x] Stations CSV: built-in, file, URL (`-s`)
 - [x] Tags list with counts, bookmarks row
-- [ ] Last search row
+- [x] Last search row
 - [x] Station list, cursor bar, playing and bookmark marks
 - [x] Type-to-filter replaces a–z/A–Z shortcuts (no `j`/`k`: letters filter)
 - [x] `1`–`9` play the first nine bookmarks
@@ -48,7 +48,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 - [x] Random station (`*`), shuffle (`Ctrl+R`, `Alt+1`–`9`)
 - [x] Sleep timer (`Ctrl+Z`), fade out, click countdown to cancel
 - [x] Bookmarks (`Ctrl+B`), saved to file
-- [ ] Search own stations and radio-browser (`:`, `Ctrl+F`, `Ctrl+S`)
+- [x] Search own stations and radio-browser (`:`, `Ctrl+F`, `Ctrl+S`)
 - [x] Help (`?`), hint bar
 - [x] Themes (`Ctrl+T`), terminal background via OSC 11
 - [x] `--ascii` glyphs, locale detection

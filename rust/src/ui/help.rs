@@ -27,6 +27,9 @@ fn lines(look: &Look) -> Vec<Vec<Seg>> {
             "Finding stations",
             vec![
                 ("a-z", "filter the list; while filtering every key types"),
+                (":", "search your stations"),
+                ("Ctrl+F", "search your stations; press again to search online"),
+                ("Ctrl+S", "search online; press again to search your stations"),
                 ("Backspace", "edit the filter"),
                 ("Esc", "clear the filter, go back, or quit from the tags list"),
                 ("/ #", "tags"),

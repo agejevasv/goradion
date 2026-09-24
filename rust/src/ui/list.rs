@@ -14,6 +14,8 @@ pub struct ListState {
     pub offset: usize,
     pub filter: String,
     height: usize,
+    /// Where the rows were last drawn.
+    rows_area: Rect,
 }
 
 impl ListState {
@@ -42,12 +44,13 @@ impl ListState {
         }
     }
 
-    /// The row under screen row y of a pane drawn at area.
-    pub fn row_at(&self, area: Rect, y: u16, len: usize) -> Option<usize> {
-        if y <= area.y || y + 1 >= area.bottom() {
+    /// The row drawn at screen row y.
+    pub fn row_at(&self, y: u16, len: usize) -> Option<usize> {
+        let area = self.rows_area;
+        if y < area.y || y >= area.bottom() {
             return None;
         }
-        let i = self.offset + (y - area.y - 1) as usize;
+        let i = self.offset + (y - area.y) as usize;
         (i < len).then_some(i)
     }
 
@@ -105,26 +108,37 @@ pub fn draw(look: &Look, buf: &mut Buffer, area: Rect, pane: &Pane<'_>, state: &
     if area.width < 6 || area.height < 3 {
         return;
     }
+    let inner = Rect { x: area.x + 1, y: area.y + 1, width: area.width - 2, height: area.height - 2 };
+    draw_rows(look, buf, inner, pane, state);
+}
 
-    let (x, w) = (area.x + 3, area.width as usize - 5);
-    state.height = area.height as usize - 2;
+/// Draws the rows in area: the cursor's edge in the first column, the labels
+/// from the third.
+pub fn draw_rows(look: &Look, buf: &mut Buffer, area: Rect, pane: &Pane<'_>, state: &mut ListState) {
+    let t = &look.t;
+    if area.width < 4 || area.height == 0 {
+        return;
+    }
+    let (x, w) = (area.x + 2, area.width as usize - 3);
+    state.rows_area = area;
+    state.height = area.height as usize;
     state.clamp(pane.rows.len());
     state.ensure_visible();
 
     if pane.rows.is_empty() {
         if let Some(empty) = &pane.empty {
-            draw_segs(buf, x, area.y + 1, w, std::slice::from_ref(empty));
+            draw_segs(buf, x, area.y, w, std::slice::from_ref(empty));
         }
         return;
     }
 
     let reversed_cursor = t.surface == Color::Reset;
     for (i, row) in pane.rows.iter().enumerate().skip(state.offset).take(state.height) {
-        let y = area.y + 1 + (i - state.offset) as u16;
+        let y = area.y + (i - state.offset) as u16;
         let cursor = i == state.cursor;
         let bar = cursor && pane.focused;
         if bar {
-            fill(buf, area.x + 1, y, w + 2, t.selected());
+            fill(buf, area.x, y, w + 2, t.selected());
         }
         let restyle = |mut s: Seg| {
             if bar && reversed_cursor {
@@ -168,7 +182,7 @@ pub fn draw(look: &Look, buf: &mut Buffer, area: Rect, pane: &Pane<'_>, state: &
             if bar && !reversed_cursor {
                 style = style.bg(t.surface);
             }
-            draw_segs(buf, area.x + 1, y, 1, &[seg(look.g.edge, style)]);
+            draw_segs(buf, area.x, y, 1, &[seg(look.g.edge, style)]);
         }
     }
 }

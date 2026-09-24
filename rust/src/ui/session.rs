@@ -49,11 +49,14 @@ impl App {
     }
 
     fn tag_exists(&self, tag: &TagRef) -> bool {
+        if tag.search {
+            return self.last_search.as_ref().is_some_and(|l| !tag.name.is_empty() && l.query == tag.name);
+        }
         tag.name == BOOKMARKS_TAG || tag.name == ALL_STATIONS_TAG || self.tags.contains(&tag.name)
     }
 
     fn find_station(&self, tag: &TagRef, url: &str) -> Option<Station> {
-        if url.is_empty() || tag.name.is_empty() || !self.tag_exists(tag) {
+        if url.is_empty() || tag.name.is_empty() || tag.search || !self.tag_exists(tag) {
             return None;
         }
         self.stations_for_tag(Some(tag)).into_iter().find(|s| s.url == url)

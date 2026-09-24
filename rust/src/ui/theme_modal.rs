@@ -40,7 +40,7 @@ impl App {
     fn theme_cursor(&mut self) -> Option<&mut ListState> {
         match &mut self.modal {
             Some(Modal::Theme(state)) => Some(state),
-            None => None,
+            _ => None,
         }
     }
 
@@ -89,7 +89,7 @@ impl App {
             MouseEventKind::ScrollUp => state.scroll(-1, THEMES.len()),
             MouseEventKind::ScrollDown => state.scroll(1, THEMES.len()),
             MouseEventKind::Down(MouseButton::Left) => {
-                if let Some(i) = state.row_at(area, m.row, THEMES.len()) {
+                if let Some(i) = state.row_at(m.row, THEMES.len()) {
                     self.save_theme(i);
                 }
                 return;

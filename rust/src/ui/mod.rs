@@ -4,6 +4,7 @@ mod card;
 pub mod glyphs;
 mod help;
 mod list;
+mod search;
 mod session;
 mod text;
 mod theme_modal;
@@ -57,6 +58,7 @@ pub struct Options {
 
 enum Modal {
     Theme(ListState),
+    Search(Box<search::Search>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -66,16 +68,29 @@ enum Page {
     Help,
 }
 
-/// Names a list of stations: a tag, All Stations or Bookmarks.
+/// Names a list of stations: a tag, All Stations, Bookmarks, or the last
+/// search, which may be named like any of them.
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct TagRef {
     name: String,
+    search: bool,
 }
 
 impl TagRef {
     fn new(name: &str) -> Self {
-        TagRef { name: name.to_string() }
+        TagRef { name: name.to_string(), search: false }
     }
+
+    fn search(query: &str) -> Self {
+        TagRef { name: query.to_string(), search: true }
+    }
+}
+
+/// The last search shown in the stations list.
+struct LastSearch {
+    query: String,
+    stations: Vec<Station>,
+    online: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -107,6 +122,7 @@ pub struct App {
     listed: Vec<Station>,
     tags_state: ListState,
     stations_state: ListState,
+    last_search: Option<LastSearch>,
     /// The station last started, and the tag it was started from.
     playing: Option<(Station, Option<TagRef>)>,
 
@@ -160,6 +176,7 @@ impl App {
             tags_state: ListState::default(),
             stations_state: ListState::default(),
             playing: None,
+            last_search: None,
             tags_area: Rect::default(),
             stations_area: Rect::default(),
             quit: false,
@@ -191,6 +208,7 @@ impl App {
     fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
         while !self.quit {
             self.tick(Instant::now());
+            self.poll_search();
             self.sync_term_bg();
             let now = SystemTime::now();
             self.card.update(self.player.snapshot(), now);
@@ -199,7 +217,8 @@ impl App {
                 let area = f.area();
                 self.draw(f.buffer_mut(), area, now);
             })?;
-            let wait = if self.card.animating(now, &self.extras()) { FRAME_INTERVAL } else { IDLE_INTERVAL };
+            let busy = self.card.animating(now, &self.extras()) || self.searching();
+            let wait = if busy { FRAME_INTERVAL } else { IDLE_INTERVAL };
             if event::poll(wait)? {
                 // Handle everything queued before the next frame.
                 loop {
@@ -239,6 +258,9 @@ impl App {
             rows.push(TagRef::new(BOOKMARKS_TAG));
         }
         rows.extend(self.tags.iter().map(|t| TagRef::new(t)));
+        if let Some(last) = &self.last_search {
+            rows.push(TagRef::search(&last.query));
+        }
         let filter = &self.tags_state.filter;
         rows.retain(|r| matches(filter, &r.name));
         rows
@@ -261,6 +283,9 @@ impl App {
     }
 
     fn stations_for_tag(&self, tag: Option<&TagRef>) -> Vec<Station> {
+        if tag.is_some_and(|t| t.search) {
+            return self.last_search.as_ref().map(|l| l.stations.clone()).unwrap_or_default();
+        }
         match tag.map(|t| t.name.as_str()) {
             None | Some(ALL_STATIONS_TAG) => self.stations.clone(),
             Some(BOOKMARKS_TAG) => self.bookmarks.list(),
@@ -326,8 +351,8 @@ impl App {
     }
 
     fn sync_tag_cursor(&mut self) {
-        let name = self.tag.as_ref().map_or(ALL_STATIONS_TAG, |t| t.name.as_str());
-        if let Some(i) = self.tag_rows().iter().position(|t| t.name == name) {
+        let tag = self.tag.clone().unwrap_or_else(|| TagRef::new(ALL_STATIONS_TAG));
+        if let Some(i) = self.tag_rows().iter().position(|t| *t == tag) {
             self.tags_state.cursor = i;
         }
     }
@@ -400,6 +425,7 @@ impl App {
     /// removes its bookmark.
     fn toggle_bookmark(&mut self) {
         let under_cursor = match (self.page, self.station_rows().get(self.stations_state.cursor)) {
+            _ if self.modal.is_some() => self.search_cursor_station(),
             (Page::Main, Some(StationRow::Station(i))) => Some(self.listed[*i].clone()),
             _ => None,
         };
@@ -443,12 +469,15 @@ impl App {
             self.quit = true;
             return;
         }
-        if self.modal.is_some() {
-            self.on_theme_key(k);
-            return;
+        match self.modal {
+            Some(Modal::Theme(_)) => return self.on_theme_key(k),
+            Some(Modal::Search(_)) => return self.on_search_key(k),
+            None => {}
         }
         match k.code {
             KeyCode::Char('t') if ctrl => self.show_theme_modal(),
+            KeyCode::Char('f') if ctrl => self.show_search_modal(false),
+            KeyCode::Char('s') if ctrl => self.show_search_modal(true),
             KeyCode::Char('b') if ctrl => self.toggle_bookmark(),
             KeyCode::Char('r') if ctrl => self.toggle_shuffle(Instant::now()),
             KeyCode::Char('z') if ctrl => self.cycle_sleep(Instant::now()),
@@ -514,6 +543,7 @@ impl App {
                 self.play_random();
             }
             '?' => self.show(Page::Help),
+            ':' => self.show_search_modal(false),
             '/' | '#' => self.show(Page::Tags),
             '1'..='9' => self.play_bookmark(c as usize - '1' as usize),
             c if c.is_alphabetic() => {
@@ -581,9 +611,10 @@ impl App {
     }
 
     fn on_mouse(&mut self, m: MouseEvent) {
-        if self.modal.is_some() {
-            self.on_theme_mouse(m);
-            return;
+        match self.modal {
+            Some(Modal::Theme(_)) => return self.on_theme_mouse(m),
+            Some(Modal::Search(_)) => return self.on_search_mouse(m),
+            None => {}
         }
         let pos = Position::new(m.column, m.row);
         if self.card.area.contains(pos) {
@@ -604,10 +635,10 @@ impl App {
             }
             return;
         }
-        let (page, area) = if self.tags_area.contains(pos) {
-            (Page::Tags, self.tags_area)
+        let page = if self.tags_area.contains(pos) {
+            Page::Tags
         } else if self.stations_area.contains(pos) {
-            (Page::Main, self.stations_area)
+            Page::Main
         } else {
             return;
         };
@@ -624,7 +655,7 @@ impl App {
                 if self.wide {
                     self.preview_tag_at_cursor();
                 }
-            } else if let Some(i) = self.tags_state.row_at(area, m.row, len) {
+            } else if let Some(i) = self.tags_state.row_at(m.row, len) {
                 self.page = Page::Tags;
                 self.tags_state.cursor = i;
                 self.activate();
@@ -633,7 +664,7 @@ impl App {
             let len = self.station_rows().len();
             if delta != 0 {
                 self.stations_state.scroll(delta, len);
-            } else if let Some(i) = self.stations_state.row_at(area, m.row, len) {
+            } else if let Some(i) = self.stations_state.row_at(m.row, len) {
                 self.show(Page::Main);
                 self.stations_state.cursor = i;
                 self.activate();
@@ -693,8 +724,10 @@ impl App {
             let segs = hint_segs(&self.look, &hints, hint_area.width.saturating_sub(1) as usize);
             draw_segs(buf, hint_area.x + 1, hint_area.y, hint_area.width.saturating_sub(1) as usize, &segs);
         }
-        if self.modal.is_some() {
-            self.draw_theme_modal(buf, body);
+        match self.modal {
+            Some(Modal::Theme(_)) => self.draw_theme_modal(buf, body),
+            Some(Modal::Search(_)) => self.draw_search_modal(buf, area),
+            None => {}
         }
     }
 
@@ -704,12 +737,19 @@ impl App {
             .tag_rows()
             .into_iter()
             .map(|tag| {
-                let count = if tag.name == BOOKMARKS_TAG {
+                let mut label = vec![seg(tag.name.as_str(), t.text())];
+                let count = if tag.search {
+                    let last = self.last_search.as_ref();
+                    if last.is_some_and(|l| l.online) {
+                        label.push(seg(" (online)", t.dim()));
+                    }
+                    last.map_or(0, |l| l.stations.len())
+                } else if tag.name == BOOKMARKS_TAG {
                     self.bookmarks.list().len()
                 } else {
                     self.tag_counts.get(&tag.name).copied().unwrap_or(0)
                 };
-                Row { label: vec![seg(tag.name, t.text())], aside: count.to_string(), ..Row::default() }
+                Row { label, aside: count.to_string(), ..Row::default() }
             })
             .collect();
         let pane = Pane {
@@ -755,14 +795,7 @@ impl App {
             })
             .collect();
 
-        let count = self.listed.len();
-        let name = self.tag.as_ref().map_or(ALL_STATIONS_TAG, |t| t.name.as_str());
-        let unit = if count == 1 { "station" } else { "stations" };
-        let title = vec![
-            seg(" ", t.text()),
-            seg(g.notes, t.fg(t.song)),
-            seg(format!(" {name} {} {count} {unit} ", g.dot), t.text()),
-        ];
+        let title = vec![seg(" ", t.text()), seg(g.notes, t.fg(t.song)), seg(format!(" {} ", self.stations_title()), t.text())];
         let empty = if !self.stations_state.filter.is_empty() {
             "No match".to_string()
         } else if self.tag.as_ref().is_some_and(|t| t.name == BOOKMARKS_TAG) {
@@ -774,9 +807,21 @@ impl App {
         list::draw(&self.look, buf, self.stations_area, &pane, &mut self.stations_state);
     }
 
+    fn stations_title(&self) -> String {
+        let count = self.listed.len();
+        let mut name = self.tag.as_ref().map_or(ALL_STATIONS_TAG.to_string(), |t| t.name.clone());
+        if self.tag.as_ref().is_some_and(|t| t.search) && self.last_search.as_ref().is_some_and(|l| l.online) {
+            name.push_str(" (online)");
+        }
+        let unit = if count == 1 { "station" } else { "stations" };
+        format!("{name} {} {count} {unit}", self.look.g.dot)
+    }
+
     fn hints(&self) -> Vec<(&'static str, &'static str)> {
-        if self.modal.is_some() {
-            return vec![("↑ ↓", "preview"), ("enter", "apply"), ("esc", "cancel")];
+        match self.modal {
+            Some(Modal::Theme(_)) => return vec![("↑ ↓", "preview"), ("enter", "apply"), ("esc", "cancel")],
+            Some(Modal::Search(_)) => return self.search_hints(),
+            None => {}
         }
         let filtering = match self.page {
             Page::Tags => !self.tags_state.filter.is_empty(),
@@ -791,6 +836,7 @@ impl App {
                 let mut hints = vec![
                     ("a-z", "filter"),
                     ("^B", "bookmark"),
+                    ("^F", "search"),
                     ("^R", "shuffle"),
                     ("^Z", "sleep"),
                     ("^T", "theme"),
@@ -803,6 +849,7 @@ impl App {
             }
             Page::Tags => vec![
                 ("a-z", "filter"),
+                ("^F", "search"),
                 ("^R", "shuffle"),
                 ("^Z", "sleep"),
                 ("^T", "theme"),

@@ -17,7 +17,6 @@ pub const DEFAULT_VOLUME: i32 = 80;
 pub const VOLUME_STEP: i32 = 5;
 const HISTORY_SIZE: usize = 20;
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
-const FADE_STEPS: u32 = 20;
 const RESAMPLE_CHUNK: usize = 1024;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -201,24 +200,6 @@ impl Player {
         self.inner.output.set_volume(volume);
         drop(st);
         self.inner.notify();
-    }
-
-    /// Moves the volume to target in steps over duration, stopping early when
-    /// cancel is set.
-    pub fn fade(&self, target: i32, duration: Duration, cancel: &AtomicBool) {
-        let from = self.snapshot().volume;
-        if duration.is_zero() {
-            self.set_volume(target);
-            return;
-        }
-        let step = duration / FADE_STEPS;
-        for i in 1..=FADE_STEPS as i32 {
-            thread::sleep(step);
-            if cancel.load(Ordering::Relaxed) {
-                return;
-            }
-            self.set_volume(from + (target - from) * i / FADE_STEPS as i32);
-        }
     }
 
     /// The level between 0 and 1, and when it was measured.

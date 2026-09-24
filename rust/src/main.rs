@@ -3,6 +3,7 @@ mod bookmarks;
 mod check;
 mod config;
 mod files;
+mod radiobrowser;
 mod log;
 mod stations;
 mod ui;
