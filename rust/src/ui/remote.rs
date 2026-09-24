@@ -321,20 +321,28 @@ mod tests {
         assert!(w <= 40 && lines.len() <= 20, "{w}x{}", lines.len());
     }
 
-    /// Sends a request and returns the status and body.
+    /// Sends a request and returns the status and body; status 0 when the
+    /// connection failed.
     fn request(port: u16, method: &str, path: &str, key: &str, body: &str) -> (u16, String) {
-        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-        write!(
-            s,
-            "{method} {path} HTTP/1.1\r\nHost: x\r\nX-Key: {key}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        )
-        .unwrap();
-        let mut resp = String::new();
-        s.read_to_string(&mut resp).unwrap();
-        let status = resp.split_whitespace().nth(1).unwrap().parse().unwrap();
-        let body = resp.split_once("\r\n\r\n").map_or("", |(_, b)| b).to_string();
-        (status, body)
+        let send = || -> std::io::Result<String> {
+            let mut s = std::net::TcpStream::connect(("127.0.0.1", port))?;
+            write!(
+                s,
+                "{method} {path} HTTP/1.1\r\nHost: x\r\nX-Key: {key}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )?;
+            let mut resp = String::new();
+            s.read_to_string(&mut resp)?;
+            Ok(resp)
+        };
+        match send() {
+            Ok(resp) => {
+                let status = resp.split_whitespace().nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+                let body = resp.split_once("\r\n\r\n").map_or("", |(_, b)| b).to_string();
+                (status, body)
+            }
+            Err(e) => (0, e.to_string()),
+        }
     }
 
     fn state(port: u16, method: &str, path: &str, key: &str, body: &str) -> (u16, State) {
@@ -464,7 +472,11 @@ mod tests {
         running.store(false, std::sync::atomic::Ordering::Relaxed);
         pump.join().unwrap();
         app.lock().unwrap().remote = None;
-        assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err(), "the server must stop");
+        // Tests run in parallel, so another test's server may get the freed
+        // port; ours must just not answer any more.
+        let (status, body) = request(port, "GET", "/api/state", &key, "");
+        let answered = status == 200 && body.contains("\"version\"");
+        assert!(!answered, "the server must stop");
     }
 
     #[test]
