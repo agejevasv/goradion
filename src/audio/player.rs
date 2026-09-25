@@ -1,0 +1,733 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread;
+use std::time::{Duration, SystemTime};
+
+use audioadapter_buffers::direct::InterleavedSlice;
+use rubato::{Fft, FixedSync, Resampler};
+
+use super::decode::{self, DecodeError, Event, Sink};
+use super::meter::BAND_COUNT;
+use super::output::{Output, Queue};
+use super::source::{self, OpenError};
+use crate::log;
+
+pub const DEFAULT_VOLUME: i32 = 80;
+pub const VOLUME_STEP: i32 = 5;
+const HISTORY_SIZE: usize = 20;
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
+const RESAMPLE_CHUNK: usize = 1024;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum State {
+    #[default]
+    Idle,
+    Buffering,
+    Playing,
+    Stopped,
+    /// The stream broke and is retried.
+    Failed,
+    /// The stream can't be played; no retries.
+    Unsupported,
+}
+
+impl State {
+    fn text(self) -> &'static str {
+        match self {
+            State::Idle => "",
+            State::Buffering => "Buffering...",
+            State::Playing => "Playing",
+            State::Stopped => "Stopped",
+            State::Failed => "Network or stream issues",
+            State::Unsupported => "Can't play this stream",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Track {
+    pub song: String,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct Info {
+    pub state: State,
+    pub status: String,
+    pub station: String,
+    pub song: String,
+    /// The song last added to the history.
+    pub prev_song: String,
+    pub url: String,
+    pub volume: i32,
+    pub bitrate: u32,
+    /// Codec and sample rate, such as "mp3 44100 Hz".
+    pub format: String,
+    /// Replaced, never modified in place, so snapshots can share it.
+    pub history: Arc<Vec<Track>>,
+}
+
+impl Info {
+    fn set_state(&mut self, state: State, reason: &str) {
+        self.state = state;
+        self.status = state.text().to_string();
+        if !reason.is_empty() {
+            self.status = format!("{}: {reason}", self.status);
+        }
+    }
+}
+
+/// Plays one station at a time. Its methods are safe to call from any thread
+/// and never block on the network.
+#[derive(Clone)]
+pub struct Player {
+    inner: Arc<Inner>,
+}
+
+struct Inner {
+    output: Output,
+    online: bool,
+    state: Mutex<PlayerState>,
+    listeners: Mutex<Vec<SyncSender<()>>>,
+}
+
+struct PlayerState {
+    info: Info,
+    session: Option<Session>,
+    /// Cancels the last station switched from, which plays on until the new
+    /// one starts. Stopping or a failure also silences the output, which ends
+    /// any other.
+    outgoing: Option<Arc<AtomicBool>>,
+}
+
+struct Session {
+    id: u64,
+    cancel: Arc<AtomicBool>,
+    /// The session's audio reached the output.
+    queued: Arc<AtomicBool>,
+    retries: u32,
+}
+
+impl Player {
+    pub fn new() -> Result<Player, String> {
+        Ok(Self::with_output(Output::open()?, true))
+    }
+
+    /// A player that only tracks state, never touching the network or a
+    /// sound card.
+    #[cfg(test)]
+    pub fn offline() -> Player {
+        Self::with_output(Output::null(), false)
+    }
+
+    fn with_output(output: Output, online: bool) -> Player {
+        output.set_volume(DEFAULT_VOLUME);
+        let info = Info { volume: DEFAULT_VOLUME, ..Info::default() };
+        Player {
+            inner: Arc::new(Inner {
+                output,
+                online,
+                state: Mutex::new(PlayerState { info, session: None, outgoing: None }),
+                listeners: Mutex::new(Vec::new()),
+            }),
+        }
+    }
+
+    pub fn snapshot(&self) -> Info {
+        self.inner.lock().info.clone()
+    }
+
+    /// Receives a message after every change; changes in a row may share one.
+    pub fn subscribe(&self) -> Receiver<()> {
+        let (tx, rx) = sync_channel(1);
+        self.inner.listeners.lock().unwrap().push(tx);
+        rx
+    }
+
+    /// Plays url, or stops it when it is the one playing.
+    pub fn play(&self, station: &str, url: &str) {
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let mut st = self.inner.lock();
+        if url == st.info.url {
+            self.inner.stop_locked(&mut st);
+            return;
+        }
+        // What is audible plays on until the new station starts: the station
+        // switched from if it started, else what played before it. A station
+        // not heard yet is dropped, so that it can't start meanwhile.
+        if let Some(old) = st.session.take() {
+            if self.inner.output.keep_if_started() && old.queued.load(Ordering::Acquire) {
+                st.outgoing = Some(old.cancel);
+            } else {
+                old.cancel.store(true, Ordering::Relaxed);
+            }
+        }
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let queued = Arc::new(AtomicBool::new(false));
+        st.session = Some(Session { id, cancel: cancel.clone(), queued: queued.clone(), retries: 0 });
+
+        let info = &mut st.info;
+        info.station = station.to_string();
+        info.url = url.to_string();
+        info.set_state(State::Buffering, "");
+        info.bitrate = 0;
+        info.format.clear();
+        info.song.clear();
+        info.prev_song.clear();
+        drop(st);
+        self.inner.notify();
+
+        log!("loading {url}");
+        if !self.inner.online {
+            return;
+        }
+        let inner = self.inner.clone();
+        let url = url.to_string();
+        thread::Builder::new()
+            .name("stream".into())
+            .spawn(move || inner.run_session(id, &url, &cancel, &queued))
+            .expect("spawning a thread");
+    }
+
+    pub fn stop(&self) {
+        let mut st = self.inner.lock();
+        if !st.info.url.is_empty() {
+            self.inner.stop_locked(&mut st);
+        }
+    }
+
+    pub fn change_volume(&self, delta: i32) {
+        let volume = self.inner.lock().info.volume + delta;
+        self.set_volume(volume);
+    }
+
+    /// Clamps volume to 0-100.
+    pub fn set_volume(&self, volume: i32) {
+        let volume = volume.clamp(0, 100);
+        let mut st = self.inner.lock();
+        if st.info.volume == volume {
+            return;
+        }
+        st.info.volume = volume;
+        self.inner.output.set_volume(volume);
+        drop(st);
+        self.inner.notify();
+    }
+
+    /// Fades the output between silent (0) and the volume (1), leaving the
+    /// volume as it is.
+    pub fn set_fade(&self, fade: f32) {
+        self.inner.output.set_fade(fade);
+    }
+
+    #[cfg(test)]
+    pub fn fade(&self) -> f32 {
+        self.inner.output.fade()
+    }
+
+    /// The level between 0 and 1, and when it was measured.
+    pub fn level(&self) -> Option<(f64, SystemTime)> {
+        self.inner.output.readings().level()
+    }
+
+    /// Band levels between 0 and 1, bass first, and when they were measured.
+    pub fn spectrum(&self) -> Option<([f64; BAND_COUNT], SystemTime)> {
+        self.inner.output.readings().spectrum()
+    }
+}
+
+impl Inner {
+    fn lock(&self) -> MutexGuard<'_, PlayerState> {
+        self.state.lock().unwrap()
+    }
+
+    fn notify(&self) {
+        self.listeners.lock().unwrap().retain(|tx| !matches!(tx.try_send(()), Err(TrySendError::Disconnected(()))));
+    }
+
+    fn stop_locked(&self, st: &mut PlayerState) {
+        log!("stopping {}", st.info.url);
+        if let Some(s) = st.session.take() {
+            s.cancel.store(true, Ordering::Relaxed);
+        }
+        if let Some(c) = st.outgoing.take() {
+            c.store(true, Ordering::Relaxed);
+        }
+        self.output.silence();
+        let info = &mut st.info;
+        info.set_state(State::Stopped, "");
+        info.url.clear();
+        info.song.clear();
+        info.prev_song.clear();
+        info.bitrate = 0;
+        info.format.clear();
+        self.notify();
+    }
+
+    fn is_current(&self, id: u64) -> bool {
+        self.lock().session.as_ref().is_some_and(|s| s.id == id)
+    }
+
+    /// Runs change when session id is still the current one.
+    fn update(&self, id: u64, change: impl FnOnce(&mut PlayerState)) {
+        let mut st = self.lock();
+        if st.session.as_ref().is_some_and(|s| s.id == id) {
+            change(&mut st);
+            drop(st);
+            self.notify();
+        }
+    }
+
+    fn run_session(self: Arc<Self>, id: u64, url: &str, cancel: &AtomicBool, queued: &AtomicBool) {
+        loop {
+            let result = self.play_once(id, url, cancel, queued);
+            // A station switched from ends here, whatever went wrong.
+            if cancel.load(Ordering::Relaxed) || !self.is_current(id) {
+                return;
+            }
+            let never_queued = matches!(result, Err(PlayError::Open(_)));
+            let (reason, retry) = match result {
+                // The output let go of the queue while the station was still
+                // tuned in: the device was reopened at another rate.
+                Ok(()) => {
+                    log!("{url}: the output was reopened, reconnecting");
+                    self.update(id, |st| st.info.set_state(State::Buffering, ""));
+                    continue;
+                }
+                Err(PlayError::Open(OpenError::Unsupported(what))) => (what.to_string(), false),
+                Err(PlayError::Decode(DecodeError::Unsupported(what)) | PlayError::Output(what)) => (what, false),
+                Err(PlayError::Decode(DecodeError::Ended)) => ("eof".to_string(), true),
+                Err(e) => (e.to_string(), true),
+            };
+            log!("{url}: {reason}");
+            let mut delay = Duration::ZERO;
+            // Under the lock, so that a station switched to meanwhile keeps
+            // the output.
+            self.update(id, |st| {
+                // No more audio of it comes, so switching away cancels it
+                // rather than keeping it as the station switched from.
+                queued.store(false, Ordering::Release);
+                // A station that failed takes the one it was replacing with
+                // it; before its audio arrived, what plays is that other
+                // station's.
+                if never_queued {
+                    self.output.silence();
+                } else {
+                    self.output.drop_outgoing();
+                }
+                if let Some(c) = st.outgoing.take() {
+                    c.store(true, Ordering::Relaxed);
+                }
+                if retry {
+                    let s = st.session.as_mut().unwrap();
+                    delay = (Duration::from_secs(1) * 2u32.saturating_pow(s.retries)).min(MAX_RETRY_DELAY);
+                    s.retries += 1;
+                }
+                st.info.set_state(if retry { State::Failed } else { State::Unsupported }, &reason);
+                st.info.song.clear();
+            });
+            if !retry {
+                return;
+            }
+            let until = std::time::Instant::now() + delay;
+            while std::time::Instant::now() < until {
+                if cancel.load(Ordering::Relaxed) {
+                    return;
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+            if !self.is_current(id) {
+                return;
+            }
+            self.update(id, |st| st.info.set_state(State::Buffering, ""));
+        }
+    }
+
+    fn play_once(
+        self: &Arc<Self>,
+        id: u64,
+        url: &str,
+        cancel: &AtomicBool,
+        queued: &AtomicBool,
+    ) -> Result<(), PlayError> {
+        let titles = self.clone();
+        let source = source::open(url, Box::new(move |title| titles.set_song(id, title))).map_err(PlayError::Open)?;
+        // The output must only ever take the queue of the station tuned in,
+        // and `play` must know whether it did.
+        let queue = {
+            let st = self.lock();
+            if cancel.load(Ordering::Relaxed) || st.session.as_ref().is_none_or(|s| s.id != id) {
+                return Ok(());
+            }
+            queued.store(true, Ordering::Release);
+            self.output.new_queue()
+        };
+        let started = self.clone();
+        let mut sink = QueueSink::new(queue, cancel, Box::new(move || started.started(id)));
+        let mut on_event = |event| match event {
+            Event::Format(f) => self.update(id, |st| st.info.format = f),
+            Event::Bitrate(br) => self.update(id, |st| st.info.bitrate = br),
+            Event::Title(t) => self.set_song(id, t),
+        };
+        decode::run(source, cancel, &mut sink, &mut on_event).map_err(PlayError::Decode)?;
+        sink.failed.map_or(Ok(()), |e| Err(PlayError::Output(e)))
+    }
+
+    /// The stream's audio reached the output. Titles can come earlier, while
+    /// the stream is still probed, or from one that then fails to decode.
+    fn started(&self, id: u64) {
+        self.update(id, |st| {
+            if st.info.state == State::Buffering {
+                st.info.set_state(State::Playing, "");
+                st.session.as_mut().unwrap().retries = 0;
+            }
+        });
+    }
+
+    /// Shows the song, and adds it to the history unless it was the last one
+    /// added: a reconnect brings the same title again.
+    fn set_song(&self, id: u64, song: String) {
+        if song.is_empty() {
+            return;
+        }
+        self.update(id, |st| {
+            let info = &mut st.info;
+            info.song.clone_from(&song);
+            if song != info.prev_song {
+                info.prev_song.clone_from(&song);
+                let mut history: Vec<Track> = info.history.iter().rev().take(HISTORY_SIZE - 1).rev().cloned().collect();
+                history.push(Track { song });
+                info.history = Arc::new(history);
+            }
+        });
+    }
+}
+
+#[derive(Debug)]
+enum PlayError {
+    Open(OpenError),
+    Decode(DecodeError),
+    /// The audio can't be resampled for the device.
+    Output(String),
+}
+
+impl std::fmt::Display for PlayError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlayError::Open(e) => e.fmt(f),
+            PlayError::Decode(e) => e.fmt(f),
+            PlayError::Output(e) => f.write_str(e),
+        }
+    }
+}
+
+/// Resamples to the device rate and queues the audio, waiting while the
+/// queue is full.
+struct QueueSink<'a> {
+    queue: Queue,
+    cancel: &'a AtomicBool,
+    on_start: Option<Box<dyn FnOnce() + Send>>,
+    /// Why the sink stopped, when it wasn't cancelled or let go of.
+    failed: Option<String>,
+    written: usize,
+    resampler: Option<(u32, Fft<f32>)>,
+    pending: Vec<f32>,
+    resampled: Vec<f32>,
+}
+
+impl<'a> QueueSink<'a> {
+    fn new(queue: Queue, cancel: &'a AtomicBool, on_start: Box<dyn FnOnce() + Send>) -> Self {
+        QueueSink {
+            queue,
+            cancel,
+            on_start: Some(on_start),
+            failed: None,
+            written: 0,
+            resampler: None,
+            pending: Vec::new(),
+            resampled: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, mut samples: &[f32]) -> bool {
+        while !samples.is_empty() {
+            // The output lets go of a queue once another station took over.
+            if self.cancel.load(Ordering::Relaxed) || self.queue.producer.is_abandoned() {
+                return false;
+            }
+            let n = self.queue.producer.slots().min(samples.len()) & !1;
+            if n == 0 {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+            let chunk = self.queue.producer.write_chunk_uninit(n).expect("slots were counted");
+            let written = chunk.fill_from_iter(samples[..n].iter().copied());
+            samples = &samples[written..];
+            self.written += written;
+        }
+        if self.written >= self.queue.prebuffer
+            && let Some(f) = self.on_start.take()
+        {
+            f();
+        }
+        true
+    }
+
+    fn resample(&mut self, frames: &[f32], rate: u32) -> bool {
+        if self.resampler.as_ref().is_none_or(|(r, _)| *r != rate) {
+            match Fft::new(rate as usize, self.queue.rate as usize, RESAMPLE_CHUNK, 2, FixedSync::Input) {
+                Ok(r) => self.resampler = Some((rate, r)),
+                Err(e) => {
+                    self.failed = Some(format!("can't resample {rate} Hz to {} Hz: {e}", self.queue.rate));
+                    return false;
+                }
+            }
+            self.pending.clear();
+        }
+        self.pending.extend_from_slice(frames);
+        let mut consumed = 0;
+        while self.pending.len() - consumed >= RESAMPLE_CHUNK * 2 {
+            let (_, resampler) = self.resampler.as_mut().unwrap();
+            let out_frames = resampler.output_frames_next();
+            self.resampled.resize(out_frames * 2, 0.0);
+            let input = &self.pending[consumed..consumed + RESAMPLE_CHUNK * 2];
+            let result = InterleavedSlice::new(input, 2, RESAMPLE_CHUNK).map_err(|e| e.to_string()).and_then(|input| {
+                let mut output =
+                    InterleavedSlice::new_mut(&mut self.resampled, 2, out_frames).map_err(|e| e.to_string())?;
+                resampler.process_into_buffer(&input, &mut output, None).map_err(|e| e.to_string())
+            });
+            let (read, wrote) = match result {
+                Ok(n) => n,
+                Err(e) => {
+                    self.failed = Some(format!("resampling: {e}"));
+                    return false;
+                }
+            };
+            consumed += read * 2;
+            let out = std::mem::take(&mut self.resampled);
+            let ok = self.push(&out[..wrote * 2]);
+            self.resampled = out;
+            if !ok {
+                return false;
+            }
+        }
+        self.pending.drain(..consumed);
+        true
+    }
+}
+
+impl Sink for QueueSink<'_> {
+    fn write(&mut self, frames: &[f32], rate: u32) -> bool {
+        if rate != self.queue.rate {
+            return self.resample(frames, rate);
+        }
+        // Were the stream to go back to the rate, the resampler would still
+        // hold audio from before.
+        self.resampler = None;
+        self.push(frames)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::Instant;
+
+    /// Serves body to every connection, counting them.
+    fn serve(head: &'static str, body: Vec<u8>) -> (String, Arc<std::sync::atomic::AtomicUsize>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stream", listener.local_addr().unwrap());
+        let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let seen = count.clone();
+        thread::spawn(move || {
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { continue };
+                seen.fetch_add(1, Ordering::Relaxed);
+                let mut req = [0u8; 1024];
+                let _ = conn.read(&mut req);
+                let _ = conn.write_all(head.as_bytes());
+                let _ = conn.write_all(&body);
+            }
+        });
+        (url, count)
+    }
+
+    /// Answers with body, then keeps the connection open without sending
+    /// more.
+    fn serve_then_hang(body: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stream", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let mut held = Vec::new();
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { continue };
+                let mut req = [0u8; 1024];
+                let _ = conn.read(&mut req);
+                let _ = conn.write_all(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n");
+                let _ = conn.write_all(&body);
+                held.push(conn);
+            }
+        });
+        url
+    }
+
+    fn wait_for(p: &Player, what: &str, cond: impl Fn(&Info) -> bool) -> Info {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let inf = p.snapshot();
+            if cond(&inf) {
+                return inf;
+            }
+            assert!(Instant::now() < deadline, "{what}: {inf:?}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn online() -> Player {
+        Player::with_output(Output::null(), true)
+    }
+
+    #[test]
+    fn broken_stream_is_retried() {
+        let (url, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", vec![0x55; 2048]);
+        let p = online();
+        p.play("Broken", &url);
+        let inf = wait_for(&p, "failed", |i| i.state == State::Failed);
+        assert!(inf.status.starts_with("Network or stream issues"), "{}", inf.status);
+        // The first retry comes after a second.
+        wait_for(&p, "retried", |_| connections.load(Ordering::Relaxed) >= 2);
+        p.stop();
+        let inf = p.snapshot();
+        assert_eq!((inf.state, inf.url.as_str()), (State::Stopped, ""));
+    }
+
+    #[test]
+    fn hls_is_not_retried() {
+        let (url, connections) = serve(
+            "HTTP/1.0 200 OK\r\nContent-Type: application/vnd.apple.mpegurl\r\n\r\n",
+            b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\nseg1.ts\n".to_vec(),
+        );
+        let p = online();
+        p.play("HLS", &url);
+        let inf = wait_for(&p, "unsupported", |i| i.state == State::Unsupported);
+        assert!(inf.status.contains("HLS"), "{}", inf.status);
+        thread::sleep(Duration::from_millis(1500));
+        assert_eq!(connections.load(Ordering::Relaxed), 1);
+    }
+
+    /// A station switched from while it waits to retry must not come back
+    /// and take the output over.
+    #[test]
+    fn station_switched_from_during_retry_stays_gone() {
+        let (broken, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", vec![0x55; 2048]);
+        // Answers, then sends nothing: buffering until the read times out.
+        let silent = serve_then_hang(Vec::new());
+        let p = online();
+        p.play("Broken", &broken);
+        wait_for(&p, "failed", |i| i.state == State::Failed);
+        p.play("Silent", &silent);
+        // The first retry would come a second after the failure.
+        thread::sleep(Duration::from_millis(2500));
+        assert_eq!(connections.load(Ordering::Relaxed), 1, "the station switched from reconnected");
+        assert_eq!(p.snapshot().station, "Silent");
+    }
+
+    /// MPEG-1 Layer III frames at 128 kbit/s, 44.1 kHz, without audio data:
+    /// silence.
+    fn silent_mp3(frames: usize) -> Vec<u8> {
+        let mut frame = vec![0u8; 417];
+        frame[..4].copy_from_slice(&[0xff, 0xfb, 0x90, 0x00]);
+        frame.repeat(frames)
+    }
+
+    #[test]
+    fn new_device_rate_reconnects() {
+        let (url, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(2000));
+        let p = online();
+        p.play("Silence", &url);
+        wait_for(&p, "playing", |i| i.state == State::Playing);
+        p.inner.output.reopen_at(44100);
+        wait_for(&p, "reconnected", |_| connections.load(Ordering::Relaxed) == 2);
+        let inf = wait_for(&p, "playing again", |i| i.state == State::Playing);
+        assert_eq!(inf.station, "Silence");
+    }
+
+    /// A title read while the stream is probed is kept for when it plays,
+    /// but neither starts it nor resets the retry backoff.
+    #[test]
+    fn titles_while_buffering() {
+        let p = Player::offline();
+        p.play("A", "http://a");
+        let id = p.inner.lock().session.as_ref().unwrap().id;
+        p.inner.lock().session.as_mut().unwrap().retries = 3;
+        p.inner.set_song(id, "Artist - Song".into());
+        let inf = p.snapshot();
+        assert_eq!((inf.state, inf.song.as_str()), (State::Buffering, "Artist - Song"));
+        assert_eq!(p.inner.lock().session.as_ref().unwrap().retries, 3);
+        p.inner.started(id);
+        let inf = p.snapshot();
+        assert_eq!((inf.state, inf.song.as_str()), (State::Playing, "Artist - Song"));
+        assert_eq!(p.inner.lock().session.as_ref().unwrap().retries, 0);
+    }
+
+    /// After a reconnect the same title shows again, without a second
+    /// history entry.
+    #[test]
+    fn same_title_after_reconnect() {
+        let (url, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(2000));
+        let p = online();
+        p.play("Silence", &url);
+        let id = p.inner.lock().session.as_ref().unwrap().id;
+        wait_for(&p, "playing", |i| i.state == State::Playing);
+        p.inner.set_song(id, "Artist - Song".into());
+        p.inner.output.reopen_at(44100);
+        wait_for(&p, "reconnected", |_| connections.load(Ordering::Relaxed) == 2);
+        wait_for(&p, "playing again", |i| i.state == State::Playing);
+        p.inner.set_song(id, "Artist - Song".into());
+        let inf = p.snapshot();
+        assert_eq!(inf.song, "Artist - Song");
+        assert_eq!(inf.history.len(), 1);
+    }
+
+    /// Switching again while the new station fills its first buffer keeps
+    /// the station audible, as the mixer does, not the one never heard.
+    #[test]
+    fn switching_twice_keeps_the_station_audible() {
+        let (audible, _) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(2000));
+        // Less than the prebuffer.
+        let starting = serve_then_hang(silent_mp3(3));
+        let p = online();
+        p.play("Audible", &audible);
+        wait_for(&p, "playing", |i| i.state == State::Playing);
+        let audible_cancel = p.inner.lock().session.as_ref().unwrap().cancel.clone();
+        p.play("Starting", &starting);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !p.inner.lock().session.as_ref().unwrap().queued.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "the second station never queued");
+            thread::sleep(Duration::from_millis(20));
+        }
+        p.play("Third", &format!("{starting}?third"));
+        assert!(!audible_cancel.load(Ordering::Relaxed), "the station audible was cancelled");
+    }
+
+    #[test]
+    fn same_url_toggles_and_history_is_capped() {
+        let p = Player::offline();
+        p.play("A", "http://a");
+        assert_eq!(p.snapshot().state, State::Buffering);
+        let id = p.inner.lock().session.as_ref().unwrap().id;
+        p.inner.started(id);
+        for i in 0..HISTORY_SIZE + 5 {
+            p.inner.set_song(id, format!("Song {i}"));
+        }
+        let inf = p.snapshot();
+        assert_eq!(inf.state, State::Playing);
+        assert_eq!(inf.history.len(), HISTORY_SIZE);
+        assert_eq!(inf.history.last().unwrap().song, format!("Song {}", HISTORY_SIZE + 4));
+        p.play("A", "http://a");
+        assert_eq!(p.snapshot().state, State::Stopped);
+    }
+}

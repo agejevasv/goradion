@@ -2,8 +2,8 @@
 
 Every theme's colours are copied from its own published palette. Where a source
 gives a colour with transparency, it is flattened onto the theme's background.
-`TestThemeLegibility` in `internal/radio/themes_test.go` checks each theme
-against the rules below.
+The `legibility` test in `src/ui/theme.rs` checks each theme against the
+rules below.
 
 ## Rules
 
@@ -64,3 +64,4 @@ against the rules below.
 | one-dark | Atom's [one-dark-syntax](https://github.com/atom/atom/tree/master/packages/one-dark-syntax) `colors.less`, `syntax-variables.less` |
 | night-owl | [sdras/night-owl-vscode-theme](https://github.com/sdras/night-owl-vscode-theme) |
 | solarized-dark, -light | [altercation/solarized](https://github.com/altercation/solarized) |
+| tomorrow-night (Rust version) | [chriskempson/tomorrow-theme](https://github.com/chriskempson/tomorrow-theme) |

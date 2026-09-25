@@ -1,5 +1,5 @@
 # goradion
-Goradion is a TUI radio player based on `mpv`.
+Goradion is a TUI online radio player.
 
 You can listen to a curated list of stations or search for more online via radio-browser.info.
 
@@ -8,42 +8,37 @@ You can listen to a curated list of stations or search for more online via radio
 </p>
 
 
-## Setup
+## Install
+[Download goradion](https://github.com/agejevasv/goradion/releases/latest) for Linux, macOS or
+Windows.
 
-1. Prerequisites: [mpv](https://mpv.io/)
-    - Mac
-      - `brew install mpv`
-    
-    - Ubuntu
-      - `apt install mpv`
-     
-    - Arch Linux
-      - `pacman -S mpv` (there is also AUR package, so you can just do: `yay -S goradion`)
-        
-    - Windows
-      - Download: [mpv](https://sourceforge.net/projects/mpv-player-windows/files/)
-      - Unpack e.g. into c:\mpv
-      - Add this dir to the PATH, either via GUI or: `setx /M PATH "%PATH%;c:\mpv"`
-         
-    - Other OSes
-      - Install mpv using your package manager or refer to https://mpv.io/installation/
-
-2. [Download goradion](https://github.com/agejevasv/goradion/releases/latest)
-3. Mark it as executable (not needed on Windows):
+### Build from source
+You need [Rust](https://rustup.rs) 1.88 or newer, and on Linux the ALSA headers and pkg-config
+(`apt install libasound2-dev pkg-config`, `dnf install alsa-lib-devel`, `pacman -S alsa-lib`):
 ```bash
-chmod +x goradion-<version>
+cargo install --locked --git https://github.com/agejevasv/goradion
 ```
-**Warning**: _[On some Windows machines](https://github.com/agejevasv/goradion/issues/1), a virus scanner identifies the binary as infected (https://go.dev/doc/faq#virus), in this case it's best to build the binary yourself: `go build .`._
+Or in a clone, `cargo build --release` leaves the binary in `target/release/`.
 
 ## Run
-On Windows just double click the downloaded exe (or run via cmd to use flags), on other OSes:
+On Windows just double click the downloaded exe (or run it from cmd to use flags), on other OSes:
 ```bash
-# Starts with preset radio stations
-goradion-<version>
+goradion          # the built-in stations
+goradion -s FILE  # your own stations, see below
 ```
+Press `?` for the keys. The other flags:
+
+| Flag | |
+|------|---|
+| `-r [key]`, `-p port` | the [phone remote](#remote-control) |
+| `-c` | check that every station plays, then quit |
+| `-d` | debug log, in `goradion.log` in the current directory |
+| `-v` | show the version |
+| `--ascii` | ASCII instead of Unicode symbols |
+| `--no-vu` | no spectrum meter |
 
 ## Stations
-The stations are configured using a CSV file with a titile, URL and semicolon `;` separated tag(s), e.g.:
+The stations are configured using a CSV file with a title, URL and semicolon `;` separated tag(s), e.g.:
 
 ```csv
 Title,URL,tag_1[;...;tag_n]

@@ -1,0 +1,4 @@
+# Links the C runtime into goradion.exe, so it runs on a clean Windows
+# without VCRUNTIME140.dll.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

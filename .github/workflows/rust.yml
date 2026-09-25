@@ -1,0 +1,132 @@
+name: Rust
+
+on:
+  push:
+    branches: [main]
+    # A v tag publishes a release; one with a hyphen, like v1.0.0-pre1, a
+    # pre-release.
+    tags: ['v*']
+  pull_request:
+  # New advisories appear without any change here.
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: just check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Rust
+      run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
+
+    # The binaries report the version in Cargo.toml, so a release tag must
+    # match it.
+    - name: Tag matches Cargo.toml
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+        version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+        if [[ "v$version" != "$GITHUB_REF_NAME" ]]; then
+          echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in Cargo.toml"
+          exit 1
+        fi
+
+    - name: ALSA headers
+      run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: just,cargo-deny,cargo-machete
+
+    - run: just check
+
+  # Every platform only for releases and manual runs (the Actions tab);
+  # pushes get just check.
+  build:
+    name: ${{ matrix.target }}
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Ubuntu runners, as a Linux binary needs a glibc at least as
+        # new as the one it was built with.
+        include:
+          - {os: ubuntu-22.04, target: x86_64-unknown-linux-gnu, asset: linux-amd64, test: true}
+          - {os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, asset: linux-arm64, test: true}
+          - {os: macos-latest, target: aarch64-apple-darwin, asset: darwin-arm64, test: true}
+          - {os: macos-latest, target: x86_64-apple-darwin, asset: darwin-amd64, test: false}
+          - {os: windows-latest, target: x86_64-pc-windows-msvc, asset: windows-amd64, test: true}
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Rust
+      run: rustup toolchain install stable --profile minimal --component clippy --target ${{ matrix.target }} && rustup default stable
+
+    - name: ALSA headers
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+    - name: Clippy
+      if: matrix.test
+      run: cargo clippy --release --target ${{ matrix.target }} -- -D warnings
+
+    - name: Test
+      if: matrix.test
+      run: cargo test --release --target ${{ matrix.target }}
+
+    - name: Build
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - uses: ilammy/msvc-dev-cmd@v1
+      if: runner.os == 'Windows'
+
+    # .cargo/config.toml links the C runtime in; a clean Windows lacks its DLLs.
+    - name: No C runtime DLLs
+      if: runner.os == 'Windows'
+      run: |
+        dumpbin -dependents target/${{ matrix.target }}/release/goradion.exe | tee dlls.txt
+        ! grep -iE 'vcruntime|msvcp|api-ms-win-crt' dlls.txt
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: goradion-${{ matrix.asset }}
+        path: target/${{ matrix.target }}/release/goradion${{ runner.os == 'Windows' && '.exe' || '' }}
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [checks, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    # goradion-linux-amd64 and so on, as the Go releases named them.
+    - name: Name the binaries
+      run: |
+        mkdir dist
+        for dir in artifacts/goradion-*; do
+          for f in "$dir"/*; do
+            ext=""
+            [[ $f == *.exe ]] && ext=.exe
+            cp "$f" "dist/${dir#artifacts/}$ext"
+          done
+        done
+        (cd dist && sha256sum -- * > SHA256SUMS)
+        ls -l dist
+
+    - uses: softprops/action-gh-release@v2
+      with:
+        prerelease: ${{ contains(github.ref_name, '-') }}
+        generate_release_notes: true
+        files: dist/*

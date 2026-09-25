@@ -1,0 +1,49 @@
+# cargo deny check: known vulnerabilities (RustSec), licences, duplicate or
+# banned crates, and where crates come from.
+
+[graph]
+# The platforms goradion ships for; others' dependencies are not checked.
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+# Vulnerabilities fail the check; so do unmaintained crates and yanked
+# versions. An advisory that doesn't apply is listed in ignore, with why.
+unmaintained = "all"
+yanked = "deny"
+ignore = []
+
+[licenses]
+# goradion is public domain; these let it stay free to use and redistribute.
+# MPL-2.0 (symphonia) is file-level copyleft: fine as long as its files are not
+# modified.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Two versions of a crate are common upstream and only cost build time.
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

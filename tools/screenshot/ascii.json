@@ -1,4 +1,0 @@
-[
-  {"keys": "nb", "wait": 3.0, "shot": "ascii-01-playing.png"},
-  {"keys": "<c-r>", "wait": 1.0, "shot": "ascii-02-shuffle.png"}
-]
