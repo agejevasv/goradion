@@ -21,7 +21,7 @@ jobs:
     name: just check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Rust
       run: rustup toolchain install stable --profile minimal --component clippy,rustfmt && rustup default stable
@@ -64,7 +64,7 @@ jobs:
           - {os: windows-latest, target: x86_64-pc-windows-msvc, asset: windows-amd64, test: true}
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Rust
       run: rustup toolchain install stable --profile minimal --component clippy --target ${{ matrix.target }} && rustup default stable
