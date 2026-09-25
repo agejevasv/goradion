@@ -1,6 +1,8 @@
 //! The terminal UI.
 
 mod card;
+#[cfg(windows)]
+mod console;
 pub mod glyphs;
 mod help;
 mod list;
@@ -14,6 +16,9 @@ mod timers;
 
 use std::collections::HashMap;
 use std::io;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant, SystemTime};
 
 use rand::RngExt;
@@ -150,7 +155,7 @@ pub struct App {
     sleep: timers::Sleep,
     modal: Option<Modal>,
     modal_area: Rect,
-    remote: Option<(crate::remote::Server, std::sync::mpsc::Receiver<crate::remote::Call>)>,
+    remote: Option<(crate::remote::Server, Receiver<crate::remote::Call>)>,
     remote_settings: RemoteSettings,
     /// The terminal's default background as last set by `sync_term_bg`.
     term_bg: ratatui::style::Color,
@@ -224,6 +229,7 @@ impl App {
     }
 
     pub fn run(mut self) -> io::Result<()> {
+        let signalled = exit_signals();
         if self.remote_settings.autostart
             && let Err(e) = self.start_remote()
         {
@@ -233,20 +239,30 @@ impl App {
         }
         let mut terminal = ratatui::init();
         execute!(io::stdout(), EnableMouseCapture)?;
-        let result = self.event_loop(&mut terminal);
+        let result = self.event_loop(&mut terminal, &signalled);
+        // Before the terminal: after a hangup it is gone.
+        self.save_session();
+        #[cfg(windows)]
+        console::saved();
         self.look.t = theme::THEMES[0];
         self.sync_term_bg();
         let _ = execute!(io::stdout(), DisableMouseCapture);
-        ratatui::restore();
-        self.cancel_sleep();
-        self.stop_shuffle();
-        self.save_session();
+        // Errors are logged: ratatui prints them, which panics once the
+        // terminal is gone, and so does the terminal's drop, which retries.
+        if let Err(e) = ratatui::try_restore() {
+            crate::log!("terminal: {e}");
+        }
+        if let Err(e) = terminal.show_cursor() {
+            crate::log!("terminal: {e}");
+            std::mem::forget(terminal);
+        }
         self.remote = None;
-        result
+        if signalled.load(Ordering::Relaxed) { Ok(()) } else { result }
     }
 
-    fn event_loop(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        while !self.quit {
+    fn event_loop(&mut self, terminal: &mut DefaultTerminal, signalled: &AtomicBool) -> io::Result<()> {
+        let events = input_events();
+        while !self.quit && !signalled.load(Ordering::Relaxed) {
             self.tick(Instant::now());
             self.poll_search();
             self.poll_remote();
@@ -266,18 +282,18 @@ impl App {
             } else {
                 IDLE_INTERVAL
             };
-            if event::poll(wait)? {
-                // Handle everything queued before the next frame.
-                loop {
-                    match event::read()? {
-                        Event::Key(k) if k.kind != KeyEventKind::Release => self.on_key(k),
-                        Event::Mouse(m) => self.on_mouse(m),
-                        _ => {}
-                    }
-                    if self.quit || !event::poll(Duration::ZERO)? {
-                        break;
-                    }
+            let mut next = match events.recv_timeout(wait) {
+                Err(RecvTimeoutError::Disconnected) => return Err(io::ErrorKind::BrokenPipe.into()),
+                received => received.ok(),
+            };
+            // Everything queued before the next frame.
+            while let Some(event) = next {
+                match event? {
+                    Event::Key(k) if k.kind != KeyEventKind::Release => self.on_key(k),
+                    Event::Mouse(m) => self.on_mouse(m),
+                    _ => {}
                 }
+                next = if self.quit { None } else { events.try_recv().ok() };
             }
         }
         Ok(())
@@ -344,15 +360,38 @@ impl App {
     /// the station playing.
     fn load_tag(&mut self, tag: TagRef) {
         self.listed = self.stations_for_tag(Some(&tag));
-        self.tag = Some(tag);
+        self.set_tag(Some(tag));
         self.stations_state = ListState::default();
         self.select_station(&self.player.snapshot().url);
     }
 
     fn open_tag(&mut self, tag: TagRef) {
         self.load_tag(tag);
-        self.tags_state.filter.clear();
+        self.keeping_tag_cursor(|a| a.tags_state.filter.clear());
         self.show(Page::Main);
+    }
+
+    /// The bookmarks row, kept while its list is shown, may come or go.
+    fn set_tag(&mut self, tag: Option<TagRef>) {
+        self.keeping_tag_cursor(|a| a.tag = tag);
+    }
+
+    /// Runs change, which may add or remove tag rows, with the tags cursor
+    /// kept on its tag.
+    fn keeping_tag_cursor(&mut self, change: impl FnOnce(&mut App)) {
+        let keep = self.tag_rows().get(self.tags_state.cursor).cloned();
+        change(self);
+        if let Some(i) = keep.and_then(|k| self.tag_rows().iter().position(|r| *r == k)) {
+            self.tags_state.cursor = i;
+        }
+    }
+
+    /// Adds or removes the bookmark; the bookmarks row may come or go.
+    fn toggle_bookmark_of(&mut self, s: &Station) {
+        self.keeping_tag_cursor(|a| {
+            a.bookmarks.toggle(s);
+        });
+        self.reload_stations();
     }
 
     /// Rebuilds the stations list, keeping the cursor.
@@ -503,10 +542,7 @@ impl App {
         let target = under_cursor
             .or_else(|| self.playing.as_ref().filter(|(s, _)| !url.is_empty() && s.url == url).map(|(s, _)| s.clone()));
         if let Some(s) = target {
-            self.bookmarks.toggle(&s);
-            if self.tag.as_ref().is_some_and(|t| t.name == BOOKMARKS_TAG) {
-                self.reload_stations();
-            }
+            self.toggle_bookmark_of(&s);
         }
     }
 
@@ -646,7 +682,7 @@ impl App {
             self.quit = true;
         } else {
             if !self.wide {
-                self.tag = None;
+                self.set_tag(None);
             }
             self.show(Page::Tags);
         }
@@ -674,7 +710,7 @@ impl App {
         }
         match self.station_rows().get(self.stations_state.cursor) {
             Some(StationRow::Back) => {
-                self.tag = None;
+                self.set_tag(None);
                 self.show(Page::Tags);
             }
             Some(StationRow::Random) => {
@@ -948,6 +984,41 @@ impl App {
     }
 }
 
+/// Terminal input, read on a thread of its own: once the terminal is gone,
+/// crossterm's read spins and never returns, and the loop has to end.
+fn input_events() -> Receiver<io::Result<Event>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("input".into())
+        .spawn(move || {
+            loop {
+                let event = event::read();
+                let failed = event.is_err();
+                if tx.send(event).is_err() || failed {
+                    return;
+                }
+            }
+        })
+        .expect("spawning a thread");
+    rx
+}
+
+/// Set when the terminal window is closed (SIGHUP, or the Windows console's
+/// close event), and by SIGTERM and SIGINT; the loop then ends as on quit, and
+/// the session is saved.
+fn exit_signals() -> Arc<AtomicBool> {
+    let flag = Arc::new(AtomicBool::new(false));
+    #[cfg(unix)]
+    for signal in [signal_hook::consts::SIGHUP, signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
+        if let Err(e) = signal_hook::flag::register(signal, flag.clone()) {
+            crate::log!("signals: {e}");
+        }
+    }
+    #[cfg(windows)]
+    console::on_close(flag.clone());
+    flag
+}
+
 /// Keys as keycaps on the cursor's surface; the terminal theme, which has
 /// none, keeps them bold.
 fn hint_segs(look: &Look, hints: &[(&str, &str)], w: usize) -> Vec<Seg> {
@@ -1028,5 +1099,55 @@ pub(crate) mod tests {
 
     pub fn test_app() -> (App, PathBuf) {
         test_app_with("")
+    }
+
+    fn tag_at_cursor(a: &App) -> TagRef {
+        a.tag_rows()[a.tags_state.cursor].clone()
+    }
+
+    #[test]
+    fn first_bookmark_keeps_the_tags_cursor() {
+        let (mut a, _dir) = test_app();
+        a.sync_layout(80);
+        a.tags_state.cursor = a.tag_rows().iter().position(|t| *t == TagRef::new("Jazz")).unwrap();
+        a.activate();
+        // The first station, below the back and random rows.
+        a.stations_state.cursor = 2;
+        a.toggle_bookmark();
+        assert!(!a.bookmarks.is_empty());
+        a.escape();
+        assert_eq!(tag_at_cursor(&a), TagRef::new("Jazz"));
+    }
+
+    #[test]
+    fn opening_a_filtered_tag_keeps_the_tags_cursor() {
+        let (mut a, _dir) = test_app();
+        a.sync_layout(80);
+        for c in "jazz".chars() {
+            a.on_char(c);
+        }
+        a.activate();
+        let opened = a.tag.clone().unwrap();
+        a.escape();
+        assert_eq!(tag_at_cursor(&a), opened);
+    }
+
+    /// The emptied bookmarks row stays while its list is shown, and goes
+    /// once the cursor leaves it.
+    #[test]
+    fn leaving_emptied_bookmarks_keeps_the_tags_cursor() {
+        let (mut a, _dir) = test_app();
+        a.sync_layout(120);
+        let s = a.stations[0].clone();
+        a.bookmarks.toggle(&s);
+        a.open_tag(TagRef::new(BOOKMARKS_TAG));
+        a.select_station(&s.url);
+        a.toggle_bookmark();
+        assert!(a.bookmarks.is_empty() && a.wants_bookmarks_row());
+        a.show(Page::Tags);
+        assert_eq!(tag_at_cursor(&a), TagRef::new(BOOKMARKS_TAG));
+        a.move_cursor(1);
+        assert!(!a.wants_bookmarks_row());
+        assert_eq!(Some(tag_at_cursor(&a)), a.tag);
     }
 }

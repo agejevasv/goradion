@@ -48,9 +48,12 @@ pub fn draw_segs(buf: &mut Buffer, x: u16, y: u16, max_width: usize, segs: &[Seg
             if cx + w > area.right() as usize {
                 return used;
             }
+            // Stream titles may hold control characters, which the terminal
+            // would act on; they count as one cell, so a space takes it.
+            let symbol = if g.contains(char::is_control) { " " } else { g };
             let cell = &mut buf[(cx as u16, y)];
             cell.reset();
-            cell.set_symbol(g).set_style(s.style);
+            cell.set_symbol(symbol).set_style(s.style);
             for extra in 1..w {
                 let cell = &mut buf[((cx + extra) as u16, y)];
                 cell.reset();
@@ -228,6 +231,16 @@ mod tests {
         assert_eq!(width("日本"), 4);
         assert_eq!(truncate_cells("日本語", 5), "日本");
         assert_eq!(slice_cells("日本語", 1, 4), " 本 ");
+    }
+
+    #[test]
+    fn control_characters_never_reach_the_terminal() {
+        let mut buf = Buffer::empty(ratatui::layout::Rect::new(0, 0, 20, 1));
+        let title = "a\x1b]0;x\x07\tb\u{9b}2Jc\r\n";
+        let used = draw_segs(&mut buf, 0, 0, 20, &[seg(title, Style::new())]);
+        let drawn: String = (0..used as u16).map(|x| buf[(x, 0)].symbol()).collect();
+        assert_eq!(used, width(title));
+        assert_eq!(drawn, "a ]0;x  b 2Jc ");
     }
 
     #[test]

@@ -10,7 +10,9 @@ use crate::files;
 use crate::log;
 use crate::stations::Station;
 
-#[derive(Serialize, Deserialize, Clone)]
+/// Fields may be missing from a hand-edited file, as the Go version allowed.
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default)]
 struct Bookmark {
     url: String,
     title: String,
@@ -116,6 +118,19 @@ mod tests {
         assert_eq!(titles, ["A renamed", "Online"]);
         assert!(!b.toggle(&a));
         assert!(!b.has("http://a"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn hand_edited_entries() {
+        let dir = std::env::temp_dir().join(format!("goradion-bm-edited-{}", std::process::id()));
+        let path = dir.join("bookmarks.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&path, r#"[{"url": "http://a"}, {"title": "No URL"}, {"url": "http://b", "title": "B"}]"#)
+            .unwrap();
+        let b = Bookmarks::load_from(path, &[]);
+        let urls: Vec<_> = b.list().into_iter().map(|s| s.url).collect();
+        assert_eq!(urls, ["http://a", "http://b"]);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

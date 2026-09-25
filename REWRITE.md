@@ -62,7 +62,7 @@ A box is ticked when the behaviour works and its Go tests are ported.
 
 ## Release
 
-- [x] `just check` in `rust/`: rustfmt, clippy with pedantic lints and no `unsafe`, tests, docs, cargo-deny (RustSec advisories, licences, sources), unused dependencies, minimum Rust 1.88; CI runs it too, and weekly
+- [x] `just check` in `rust/`: rustfmt, clippy with pedantic lints and no `unsafe` but one Windows API call, tests, docs, cargo-deny (RustSec advisories, licences, sources), unused dependencies, minimum Rust 1.88; CI runs it too, and weekly
 - [ ] Linux, macOS, Windows builds in CI, and a pre-release for each `rust-v*` tag (`.github/workflows/rust.yml`, not run yet)
 - [ ] README without mpv
 - [ ] AUR package

@@ -68,7 +68,7 @@ impl App {
             Action::State => {}
             Action::Tags => {
                 self.modal_close_for_remote();
-                self.tag = None;
+                self.set_tag(None);
                 self.show(Page::Tags);
             }
             Action::Tag => {
@@ -93,8 +93,7 @@ impl App {
                     !playing_url.is_empty() && s.url == playing_url && (q.url.is_empty() || q.url == s.url)
                 });
                 let station = listed.or(playing).ok_or_else(|| ApiError::not_found("station not found"))?;
-                self.bookmarks.toggle(&station);
-                self.reload_stations();
+                self.toggle_bookmark_of(&station);
             }
             Action::Stop => self.stop(),
             Action::Random => {

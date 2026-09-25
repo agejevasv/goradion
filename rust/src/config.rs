@@ -212,6 +212,9 @@ fn parse_yaml(text: &str) -> Result<Vec<Entry>, String> {
     // indent, and whether the block is a scalar's text rather than entries.
     let mut block: Option<(usize, Option<usize>, bool)> = None;
     for (n, raw) in text.lines().enumerate() {
+        // Some Windows editors start the file with a byte order mark.
+        let bom = if n == 0 && raw.starts_with('\u{feff}') { '\u{feff}'.len_utf8() } else { 0 };
+        let raw = &raw[bom..];
         let err = |what: &str| format!("line {}: {what}", n + 1);
         let content = strip_comment(raw);
         if content.trim().is_empty() || raw.trim_start().starts_with("---") {
@@ -257,7 +260,7 @@ fn parse_yaml(text: &str) -> Result<Vec<Entry>, String> {
         if indent == 0 && (rest.is_empty() || block_scalar) {
             block = Some((entries.len(), None, block_scalar));
         }
-        entries.push(Entry { parent, key, value, line: n, colon: indent + colon, multiline: block_scalar });
+        entries.push(Entry { parent, key, value, line: n, colon: bom + indent + colon, multiline: block_scalar });
     }
     Ok(entries)
 }
@@ -527,6 +530,17 @@ mod tests {
         c.save(&["tag", "station"]).unwrap();
         assert_eq!(read(&path), "tag: Rock'n'roll # note\nstation: \"it's # here\" # s\n");
         assert_eq!(Config::load_from(path.clone()), c);
+    }
+
+    #[test]
+    fn byte_order_mark() {
+        let path = temp("bom");
+        write(&path, "\u{feff}theme: nord # dark\nvolume: 10\n");
+        let mut c = Config::load_from(path.clone());
+        assert_eq!(c.theme, "nord");
+        c.theme = "dracula".into();
+        c.save(&["theme"]).unwrap();
+        assert_eq!(read(&path), "\u{feff}theme: dracula # dark\nvolume: 10\n");
     }
 
     #[test]

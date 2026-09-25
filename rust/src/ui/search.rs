@@ -205,7 +205,7 @@ impl App {
     pub(super) fn open_search(&mut self, query: &str, stations: Vec<Station>, online: bool) {
         self.last_search = Some(LastSearch { query: query.to_string(), stations, online });
         self.load_tag(TagRef::search(query));
-        self.tags_state.filter.clear();
+        self.keeping_tag_cursor(|a| a.tags_state.filter.clear());
         self.stations_state.filter.clear();
         self.modal = None;
         self.show(Page::Main);

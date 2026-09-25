@@ -26,12 +26,20 @@ unicode-width = "0.2.2"
 url = "2.5.8"
 webpki-roots = "1.0.9"
 
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3.18"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Console"] }
+
 [profile.release]
 lto = true
 strip = true
 
 [lints.rust]
-unsafe_code = "forbid"
+# Denied, not forbidden: saving the session when the Windows console window
+# closes takes one call into the Windows API (src/ui/console.rs).
+unsafe_code = "deny"
 unused_qualifications = "warn"
 
 [lints.clippy]

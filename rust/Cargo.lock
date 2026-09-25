@@ -690,12 +690,14 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
+ "signal-hook",
  "symphonia",
  "tiny_http",
  "unicode-segmentation",
  "unicode-width",
  "url",
  "webpki-roots",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

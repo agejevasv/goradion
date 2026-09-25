@@ -93,8 +93,9 @@ struct Inner {
 struct PlayerState {
     info: Info,
     session: Option<Session>,
-    /// Cancels the station being switched from, which plays on until the new
-    /// one starts.
+    /// Cancels the last station switched from, which plays on until the new
+    /// one starts. Stopping or a failure also silences the output, which ends
+    /// any other.
     outgoing: Option<Arc<AtomicBool>>,
 }
 
@@ -151,12 +152,12 @@ impl Player {
             return;
         }
         // What is audible plays on until the new station starts; a station
-        // still connecting is dropped.
+        // still connecting is dropped. Of two stations with a queue, the one
+        // audible may be the older: the mixer keeps it and lets go of the
+        // other, whose session then ends.
         if let Some(old) = st.session.take() {
             if old.queued.load(Ordering::Acquire) {
-                if let Some(older) = st.outgoing.replace(old.cancel) {
-                    older.store(true, Ordering::Relaxed);
-                }
+                st.outgoing = Some(old.cancel);
             } else {
                 old.cancel.store(true, Ordering::Relaxed);
             }
@@ -536,6 +537,25 @@ mod tests {
         (url, count)
     }
 
+    /// Answers with body, then keeps the connection open without sending
+    /// more.
+    fn serve_then_hang(body: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/stream", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let mut held = Vec::new();
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { continue };
+                let mut req = [0u8; 1024];
+                let _ = conn.read(&mut req);
+                let _ = conn.write_all(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n");
+                let _ = conn.write_all(&body);
+                held.push(conn);
+            }
+        });
+        url
+    }
+
     fn wait_for(p: &Player, what: &str, cond: impl Fn(&Info) -> bool) -> Info {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -586,18 +606,7 @@ mod tests {
     fn station_switched_from_during_retry_stays_gone() {
         let (broken, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", vec![0x55; 2048]);
         // Answers, then sends nothing: buffering until the read times out.
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let silent = format!("http://{}/stream", listener.local_addr().unwrap());
-        thread::spawn(move || {
-            let mut held = Vec::new();
-            for conn in listener.incoming() {
-                let Ok(mut conn) = conn else { continue };
-                let mut req = [0u8; 1024];
-                let _ = conn.read(&mut req);
-                let _ = conn.write_all(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n");
-                held.push(conn);
-            }
-        });
+        let silent = serve_then_hang(Vec::new());
         let p = online();
         p.play("Broken", &broken);
         wait_for(&p, "failed", |i| i.state == State::Failed);
@@ -626,6 +635,27 @@ mod tests {
         wait_for(&p, "reconnected", |_| connections.load(Ordering::Relaxed) == 2);
         let inf = wait_for(&p, "playing again", |i| i.state == State::Playing);
         assert_eq!(inf.station, "Silence");
+    }
+
+    /// Switching again while the new station fills its first buffer keeps
+    /// the station audible, as the mixer does, not the one never heard.
+    #[test]
+    fn switching_twice_keeps_the_station_audible() {
+        let (audible, _) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(2000));
+        // Less than the prebuffer.
+        let starting = serve_then_hang(silent_mp3(3));
+        let p = online();
+        p.play("Audible", &audible);
+        wait_for(&p, "playing", |i| i.state == State::Playing);
+        let audible_cancel = p.inner.lock().session.as_ref().unwrap().cancel.clone();
+        p.play("Starting", &starting);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !p.inner.lock().session.as_ref().unwrap().queued.load(Ordering::Acquire) {
+            assert!(Instant::now() < deadline, "the second station never queued");
+            thread::sleep(Duration::from_millis(20));
+        }
+        p.play("Third", &format!("{starting}?third"));
+        assert!(!audible_cancel.load(Ordering::Relaxed), "the station audible was cancelled");
     }
 
     #[test]
