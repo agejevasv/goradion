@@ -18,19 +18,6 @@ cargo install --locked --git https://github.com/agejevasv/goradion
 ```
 Or in a clone, `cargo build --release` leaves the binary in `target/release/`.
 
-## Run
-Press `?` for the keys. Flags:
-
-| Flag | |
-|------|---|
-| `-s file` or `-s URL` | your own [stations](#stations) |
-| `-r [key]`, `-p port` | the [phone remote](#remote-control) |
-| `-c` | check that every station plays, then quit |
-| `-d` | debug log, in `goradion.log` in the current directory |
-| `-v` | show the version |
-| `--ascii` | ASCII instead of Unicode symbols |
-| `--no-vu` | no spectrum meter |
-
 ## Stations
 Your own list, a CSV file or URL given with `-s`, has a station per line:
 ```csv
