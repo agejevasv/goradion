@@ -566,6 +566,7 @@ impl App {
     }
 
     fn on_key(&mut self, k: KeyEvent) {
+        let k = if cfg!(windows) { altgr_as_typed(k) } else { k };
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl && k.code == KeyCode::Char('c') {
             self.quit = true;
@@ -984,6 +985,16 @@ impl App {
     }
 }
 
+/// Windows reports a character typed with Alt Gr, which many keyboard layouts
+/// need for letters and symbols, as that character with Ctrl+Alt.
+fn altgr_as_typed(mut k: KeyEvent) -> KeyEvent {
+    let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
+    if matches!(k.code, KeyCode::Char(_)) && k.modifiers.contains(altgr) {
+        k.modifiers.remove(altgr);
+    }
+    k
+}
+
 /// Terminal input, read on a thread of its own: once the terminal is gone,
 /// crossterm's read spins and never returns, and the loop has to end.
 fn input_events() -> Receiver<io::Result<Event>> {
@@ -1117,6 +1128,19 @@ pub(crate) mod tests {
         assert!(!a.bookmarks.is_empty());
         a.escape();
         assert_eq!(tag_at_cursor(&a), TagRef::new("Jazz"));
+    }
+
+    #[test]
+    fn altgr_types() {
+        let (mut a, _dir) = test_app();
+        a.sync_layout(80);
+        let altgr = KeyModifiers::CONTROL | KeyModifiers::ALT;
+        for c in ['ł', '@'] {
+            a.on_key(altgr_as_typed(KeyEvent::new(KeyCode::Char(c), altgr)));
+        }
+        assert_eq!(a.tags_state.filter, "ł@");
+        let ctrl_b = altgr_as_typed(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
+        assert_eq!(ctrl_b.modifiers, KeyModifiers::CONTROL);
     }
 
     #[test]

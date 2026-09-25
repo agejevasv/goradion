@@ -23,6 +23,9 @@ pub struct Bookmarks {
     items: Vec<Bookmark>,
     /// The stations list by URL.
     known: HashMap<String, Station>,
+    /// The file couldn't be read, e.g. after a bad hand edit; it is set
+    /// aside rather than overwritten.
+    unreadable: bool,
 }
 
 impl Bookmarks {
@@ -32,19 +35,17 @@ impl Bookmarks {
 
     pub fn load_from(path: PathBuf, stations: &[Station]) -> Self {
         let known = stations.iter().map(|s| (s.url.clone(), s.clone())).collect();
-        let mut items: Vec<Bookmark> = match std::fs::read(&path) {
-            Ok(data) => serde_json::from_slice(&data).unwrap_or_else(|e| {
-                log!("bookmarks: {e}");
-                Vec::new()
-            }),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        let read = std::fs::read(&path).and_then(|data| serde_json::from_slice(&data).map_err(std::io::Error::other));
+        let (mut items, unreadable): (Vec<Bookmark>, bool) = match read {
+            Ok(items) => (items, false),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (Vec::new(), false),
             Err(e) => {
                 log!("bookmarks: {e}");
-                Vec::new()
+                (Vec::new(), true)
             }
         };
         items.retain(|b| !b.url.is_empty());
-        Bookmarks { path, items, known }
+        Bookmarks { path, items, known, unreadable }
     }
 
     pub fn has(&self, url: &str) -> bool {
@@ -67,7 +68,19 @@ impl Bookmarks {
         added
     }
 
-    fn save(&self) {
+    fn save(&mut self) {
+        if self.unreadable {
+            let backup = self.path.with_extension("json.bak");
+            match std::fs::rename(&self.path, &backup) {
+                Ok(()) => log!("bookmarks: the unreadable file was kept as {}", backup.display()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    log!("bookmarks: not saved, as the unreadable file can't be kept: {e}");
+                    return;
+                }
+            }
+            self.unreadable = false;
+        }
         let result = serde_json::to_vec_pretty(&self.items)
             .map_err(std::io::Error::other)
             .and_then(|data| files::write_atomic(&self.path, &data));
@@ -118,6 +131,22 @@ mod tests {
         assert_eq!(titles, ["A renamed", "Online"]);
         assert!(!b.toggle(&a));
         assert!(!b.has("http://a"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unreadable_file_is_kept() {
+        let dir = std::env::temp_dir().join(format!("goradion-bm-broken-{}", std::process::id()));
+        let path = dir.join("bookmarks.json");
+        std::fs::create_dir_all(&dir).unwrap();
+        let broken = r#"[{"url": "http://a", "title": "A"},]"#;
+        std::fs::write(&path, broken).unwrap();
+        let mut b = Bookmarks::load_from(path.clone(), &[]);
+        assert!(b.is_empty());
+        b.toggle(&Station { title: "B".into(), url: "http://b".into(), tags: vec![] });
+        assert_eq!(std::fs::read_to_string(dir.join("bookmarks.json.bak")).unwrap(), broken);
+        let urls: Vec<_> = Bookmarks::load_from(path, &[]).list().into_iter().map(|s| s.url).collect();
+        assert_eq!(urls, ["http://b"]);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

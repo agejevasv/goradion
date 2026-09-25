@@ -21,20 +21,22 @@ pub fn load(source: &str) -> Result<Vec<Station>, String> {
     if source.starts_with("http://") || source.starts_with("https://") {
         let mut body = Vec::new();
         match http::get(source, &[]).and_then(|mut r| r.body.read_to_end(&mut body)) {
-            Ok(_) => return parse(&body[..]),
+            Ok(_) => return parse(&body),
             Err(e) => {
                 log!("stations: {e}, using the built-in list");
                 return parse(BUILT_IN.as_bytes());
             }
         }
     }
-    let file = std::fs::File::open(source).map_err(|e| format!("{source}: {e}"))?;
-    parse(file)
+    let data = std::fs::read(source).map_err(|e| format!("{source}: {e}"))?;
+    parse(&data)
 }
 
 /// Reads "title,url[,tag;tag...]" rows and skips rows without a URL.
-fn parse(r: impl Read) -> Result<Vec<Station>, String> {
-    let mut reader = csv::ReaderBuilder::new().has_headers(false).flexible(true).from_reader(r);
+fn parse(data: &[u8]) -> Result<Vec<Station>, String> {
+    // Excel and older Notepad start UTF-8 files with a byte order mark.
+    let data = data.strip_prefix(b"\xef\xbb\xbf").unwrap_or(data);
+    let mut reader = csv::ReaderBuilder::new().has_headers(false).flexible(true).from_reader(data);
     let mut stations = Vec::new();
     for rec in reader.records() {
         let rec = rec.map_err(|e| format!("can't parse stations CSV: {e}"))?;
@@ -61,6 +63,12 @@ mod tests {
         assert_eq!(got[0].tags, ["Jazz", "Lounge"]);
         assert_eq!(got[1].title, "B, the station");
         assert!(got[1].tags.is_empty());
+    }
+
+    #[test]
+    fn byte_order_mark() {
+        let got = parse("\u{feff}\"A, the station\",http://a,Jazz\n".as_bytes()).unwrap();
+        assert_eq!((got[0].title.as_str(), got[0].url.as_str()), ("A, the station", "http://a"));
     }
 
     #[test]

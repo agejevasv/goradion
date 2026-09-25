@@ -56,6 +56,7 @@ pub struct Info {
     pub status: String,
     pub station: String,
     pub song: String,
+    /// The song last added to the history.
     pub prev_song: String,
     pub url: String,
     pub volume: i32,
@@ -151,12 +152,11 @@ impl Player {
             self.inner.stop_locked(&mut st);
             return;
         }
-        // What is audible plays on until the new station starts; a station
-        // still connecting is dropped. Of two stations with a queue, the one
-        // audible may be the older: the mixer keeps it and lets go of the
-        // other, whose session then ends.
+        // What is audible plays on until the new station starts: the station
+        // switched from if it started, else what played before it. A station
+        // not heard yet is dropped, so that it can't start meanwhile.
         if let Some(old) = st.session.take() {
-            if old.queued.load(Ordering::Acquire) {
+            if self.inner.output.keep_if_started() && old.queued.load(Ordering::Acquire) {
                 st.outgoing = Some(old.cancel);
             } else {
                 old.cancel.store(true, Ordering::Relaxed);
@@ -301,19 +301,21 @@ impl Inner {
                 Err(e) => (e.to_string(), true),
             };
             log!("{url}: {reason}");
-            // No audio of it plays now, so switching away cancels it rather
-            // than keeping it as the station switched from.
-            queued.store(false, Ordering::Release);
-
-            // A station that failed takes the one it was replacing with it;
-            // before its audio arrived, what plays is that other station's.
-            if never_queued {
-                self.output.silence();
-            } else {
-                self.output.drop_outgoing();
-            }
             let mut delay = Duration::ZERO;
+            // Under the lock, so that a station switched to meanwhile keeps
+            // the output.
             self.update(id, |st| {
+                // No more audio of it comes, so switching away cancels it
+                // rather than keeping it as the station switched from.
+                queued.store(false, Ordering::Release);
+                // A station that failed takes the one it was replacing with
+                // it; before its audio arrived, what plays is that other
+                // station's.
+                if never_queued {
+                    self.output.silence();
+                } else {
+                    self.output.drop_outgoing();
+                }
                 if let Some(c) = st.outgoing.take() {
                     c.store(true, Ordering::Relaxed);
                 }
@@ -338,10 +340,7 @@ impl Inner {
             if !self.is_current(id) {
                 return;
             }
-            self.update(id, |st| {
-                st.info.set_state(State::Buffering, "");
-                st.info.prev_song.clear();
-            });
+            self.update(id, |st| st.info.set_state(State::Buffering, ""));
         }
     }
 
@@ -354,14 +353,18 @@ impl Inner {
     ) -> Result<(), PlayError> {
         let titles = self.clone();
         let source = source::open(url, Box::new(move |title| titles.set_song(id, title))).map_err(PlayError::Open)?;
-        // The output must only ever take the queue of the station tuned in.
-        if cancel.load(Ordering::Relaxed) || !self.is_current(id) {
-            return Ok(());
-        }
+        // The output must only ever take the queue of the station tuned in,
+        // and `play` must know whether it did.
+        let queue = {
+            let st = self.lock();
+            if cancel.load(Ordering::Relaxed) || st.session.as_ref().is_none_or(|s| s.id != id) {
+                return Ok(());
+            }
+            queued.store(true, Ordering::Release);
+            self.output.new_queue()
+        };
         let started = self.clone();
-        let queue = self.output.new_queue();
-        queued.store(true, Ordering::Release);
-        let mut sink = QueueSink::new(queue, cancel, Box::new(move || started.set_song(id, String::new())));
+        let mut sink = QueueSink::new(queue, cancel, Box::new(move || started.started(id)));
         let mut on_event = |event| match event {
             Event::Format(f) => self.update(id, |st| st.info.format = f),
             Event::Bitrate(br) => self.update(id, |st| st.info.bitrate = br),
@@ -371,18 +374,27 @@ impl Inner {
         sink.failed.map_or(Ok(()), |e| Err(PlayError::Output(e)))
     }
 
-    /// Marks a buffering stream as playing, and records a new song.
-    fn set_song(&self, id: u64, song: String) {
+    /// The stream's audio reached the output. Titles can come earlier, while
+    /// the stream is still probed, or from one that then fails to decode.
+    fn started(&self, id: u64) {
         self.update(id, |st| {
-            let info = &mut st.info;
-            if info.state == State::Buffering {
-                info.set_state(State::Playing, "");
-                info.song.clear();
+            if st.info.state == State::Buffering {
+                st.info.set_state(State::Playing, "");
                 st.session.as_mut().unwrap().retries = 0;
             }
-            if !song.is_empty() && song != info.prev_song {
-                info.set_state(State::Playing, "");
-                info.song.clone_from(&song);
+        });
+    }
+
+    /// Shows the song, and adds it to the history unless it was the last one
+    /// added: a reconnect brings the same title again.
+    fn set_song(&self, id: u64, song: String) {
+        if song.is_empty() {
+            return;
+        }
+        self.update(id, |st| {
+            let info = &mut st.info;
+            info.song.clone_from(&song);
+            if song != info.prev_song {
                 info.prev_song.clone_from(&song);
                 let mut history: Vec<Track> = info.history.iter().rev().take(HISTORY_SIZE - 1).rev().cloned().collect();
                 history.push(Track { song });
@@ -507,7 +519,13 @@ impl<'a> QueueSink<'a> {
 
 impl Sink for QueueSink<'_> {
     fn write(&mut self, frames: &[f32], rate: u32) -> bool {
-        if rate == self.queue.rate { self.push(frames) } else { self.resample(frames, rate) }
+        if rate != self.queue.rate {
+            return self.resample(frames, rate);
+        }
+        // Were the stream to go back to the rate, the resampler would still
+        // hold audio from before.
+        self.resampler = None;
+        self.push(frames)
     }
 }
 
@@ -637,6 +655,43 @@ mod tests {
         assert_eq!(inf.station, "Silence");
     }
 
+    /// A title read while the stream is probed is kept for when it plays,
+    /// but neither starts it nor resets the retry backoff.
+    #[test]
+    fn titles_while_buffering() {
+        let p = Player::offline();
+        p.play("A", "http://a");
+        let id = p.inner.lock().session.as_ref().unwrap().id;
+        p.inner.lock().session.as_mut().unwrap().retries = 3;
+        p.inner.set_song(id, "Artist - Song".into());
+        let inf = p.snapshot();
+        assert_eq!((inf.state, inf.song.as_str()), (State::Buffering, "Artist - Song"));
+        assert_eq!(p.inner.lock().session.as_ref().unwrap().retries, 3);
+        p.inner.started(id);
+        let inf = p.snapshot();
+        assert_eq!((inf.state, inf.song.as_str()), (State::Playing, "Artist - Song"));
+        assert_eq!(p.inner.lock().session.as_ref().unwrap().retries, 0);
+    }
+
+    /// After a reconnect the same title shows again, without a second
+    /// history entry.
+    #[test]
+    fn same_title_after_reconnect() {
+        let (url, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(2000));
+        let p = online();
+        p.play("Silence", &url);
+        let id = p.inner.lock().session.as_ref().unwrap().id;
+        wait_for(&p, "playing", |i| i.state == State::Playing);
+        p.inner.set_song(id, "Artist - Song".into());
+        p.inner.output.reopen_at(44100);
+        wait_for(&p, "reconnected", |_| connections.load(Ordering::Relaxed) == 2);
+        wait_for(&p, "playing again", |i| i.state == State::Playing);
+        p.inner.set_song(id, "Artist - Song".into());
+        let inf = p.snapshot();
+        assert_eq!(inf.song, "Artist - Song");
+        assert_eq!(inf.history.len(), 1);
+    }
+
     /// Switching again while the new station fills its first buffer keeps
     /// the station audible, as the mixer does, not the one never heard.
     #[test]
@@ -664,6 +719,7 @@ mod tests {
         p.play("A", "http://a");
         assert_eq!(p.snapshot().state, State::Buffering);
         let id = p.inner.lock().session.as_ref().unwrap().id;
+        p.inner.started(id);
         for i in 0..HISTORY_SIZE + 5 {
             p.inner.set_song(id, format!("Song {i}"));
         }

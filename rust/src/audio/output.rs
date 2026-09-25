@@ -107,6 +107,12 @@ impl Output {
         self.shared.mixer.lock().unwrap().drop_outgoing();
     }
 
+    /// Drops the queue tuned in unless it started; reports whether it plays
+    /// on until the next one starts.
+    pub fn keep_if_started(&self) -> bool {
+        self.shared.mixer.lock().unwrap().keep_if_started()
+    }
+
     /// Volume 0-100 on mpv's cubic curve.
     pub fn set_volume(&self, volume: i32) {
         let gain = (volume.clamp(0, 100) as f32 / 100.0).powi(3);
@@ -191,6 +197,7 @@ fn start_stream(
         SampleFormat::F32 => build::<f32>(&device, &config, shared.clone(), lost),
         SampleFormat::I16 => build::<i16>(&device, &config, shared.clone(), lost),
         SampleFormat::U16 => build::<u16>(&device, &config, shared.clone(), lost),
+        SampleFormat::I24 => build::<cpal::I24>(&device, &config, shared.clone(), lost),
         SampleFormat::I32 => build::<i32>(&device, &config, shared.clone(), lost),
         other => return Err(format!("unsupported output sample format {other}")),
     }?;
@@ -228,7 +235,9 @@ where
                 meter.feed(l, r, &shared.readings);
             }
             gain += (target - gain) * GAIN_SMOOTHING;
-            let (l, r) = (l * gain, r * gain);
+            // Overs, from loud masters or a crossfade, must clip: 24-bit
+            // samples would wrap around.
+            let (l, r) = ((l * gain).clamp(-1.0, 1.0), (r * gain).clamp(-1.0, 1.0));
             match frame {
                 [mono] => *mono = T::from_sample(f32::midpoint(l, r)),
                 [left, right, rest @ ..] => {

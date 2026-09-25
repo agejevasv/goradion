@@ -46,12 +46,30 @@ impl Mixer {
     /// Tunes in to a new queue. What is audible now plays on until it has
     /// its prebuffer: a current queue that never started is dropped instead.
     pub fn switch_to(&mut self, queue: Consumer<f32>) {
-        if self.primed || self.outgoing.is_none() {
+        if self.prime() {
             self.outgoing = self.current.take();
         }
         self.current = Some(queue);
         self.primed = false;
         self.faded = 0;
+    }
+
+    /// Drops the current queue unless it started, so that a station switched
+    /// away from before it was heard never starts; reports whether it plays on.
+    pub fn keep_if_started(&mut self) -> bool {
+        if !self.prime() {
+            self.current = None;
+        }
+        self.primed
+    }
+
+    /// Whether the current queue started, or starts with the next mix as it
+    /// has its prebuffer.
+    fn prime(&mut self) -> bool {
+        if !self.primed && self.current.as_ref().is_some_and(|c| c.slots() >= self.prebuffer) {
+            self.primed = true;
+        }
+        self.primed
     }
 
     pub fn clear(&mut self) {
@@ -70,11 +88,7 @@ impl Mixer {
     pub fn mix(&mut self, out: &mut [f32]) -> usize {
         out.fill(0.0);
         let frames = out.len() / 2;
-        if !self.primed && self.current.as_ref().is_some_and(|c| c.slots() >= self.prebuffer) {
-            self.primed = true;
-        }
-
-        let new = if self.primed { take(&mut self.current, frames) } else { None };
+        let new = if self.prime() { take(&mut self.current, frames) } else { None };
         let old = take(&mut self.outgoing, frames);
         let (new_a, new_b) = new.as_ref().map_or((&[][..], &[][..]), ReadChunk::as_slices);
         let (old_a, old_b) = old.as_ref().map_or((&[][..], &[][..]), ReadChunk::as_slices);
@@ -188,6 +202,24 @@ mod tests {
         fill(&mut c_producer, -1.0, 2000);
         run(&mut m, 1100);
         assert!(a.is_abandoned());
+    }
+
+    #[test]
+    fn a_queue_switched_from_before_it_started_stays_silent() {
+        let mut m = Mixer::new(RATE);
+        let (mut a, c) = queue();
+        m.switch_to(c);
+        fill(&mut a, 1.0, 100);
+        run(&mut m, 10);
+        // Switched away from while it buffers: it must not start meanwhile.
+        assert!(!m.keep_if_started());
+        assert!(a.is_abandoned());
+        let (mut b, c) = queue();
+        m.switch_to(c);
+        assert!(run(&mut m, 10).iter().all(|&s| s == 0.0));
+        fill(&mut b, -1.0, 500);
+        assert!(run(&mut m, 10).iter().all(|&s| s == -1.0), "B starts without a fade from A");
+        assert!(m.keep_if_started());
     }
 
     #[test]
