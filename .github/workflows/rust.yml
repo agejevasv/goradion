@@ -94,7 +94,7 @@ jobs:
         dumpbin -dependents target/${{ matrix.target }}/release/goradion.exe | tee dlls.txt
         ! grep -iE 'vcruntime|msvcp|api-ms-win-crt' dlls.txt
 
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: goradion-${{ matrix.asset }}
         path: target/${{ matrix.target }}/release/goradion${{ runner.os == 'Windows' && '.exe' || '' }}
