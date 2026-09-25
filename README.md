@@ -18,13 +18,6 @@ cargo install --locked --git https://github.com/agejevasv/goradion
 ```
 Or in a clone, `cargo build --release` leaves the binary in `target/release/`.
 
-## Stations
-Your own list, a CSV file or URL given with `-s`, has a station per line:
-```csv
-Title,URL,tag_1[;...;tag_n]
-...
-```
-
 ## Search
 `Ctrl+S` searches radio-browser.info; press it again to search your own stations.
 
