@@ -208,9 +208,9 @@ struct Entry {
 
 fn parse_yaml(text: &str) -> Result<Vec<Entry>, String> {
     let mut entries = Vec::new();
-    // The top-level entry whose value is the block being read, and the
-    // block's indent.
-    let mut block: Option<(usize, Option<usize>)> = None;
+    // The top-level entry whose value is the block being read, the block's
+    // indent, and whether the block is a scalar's text rather than entries.
+    let mut block: Option<(usize, Option<usize>, bool)> = None;
     for (n, raw) in text.lines().enumerate() {
         let err = |what: &str| format!("line {}: {what}", n + 1);
         let content = strip_comment(raw);
@@ -227,13 +227,13 @@ fn parse_yaml(text: &str) -> Result<Vec<Entry>, String> {
             block = None;
             None
         } else {
-            let Some((parent, child_indent)) = &mut block else {
+            let Some((parent, child_indent, text)) = &mut block else {
                 return Err(err("unexpected indentation"));
             };
             let parent_entry: &mut Entry = &mut entries[*parent];
             parent_entry.multiline = true;
             let child_indent = *child_indent.get_or_insert(indent);
-            if indent != child_indent || line.starts_with("- ") || line == "-" {
+            if *text || indent != child_indent || line.starts_with("- ") || line == "-" {
                 // Deeper structure under a key goradion doesn't read.
                 continue;
             }
@@ -254,11 +254,10 @@ fn parse_yaml(text: &str) -> Result<Vec<Entry>, String> {
         } else {
             Some(unquote(rest).map_err(|e| err(&e))?)
         };
-        let multiline = matches!(rest.chars().next(), Some('|' | '>'));
-        if indent == 0 && (rest.is_empty() || multiline) {
-            block = Some((entries.len(), None));
+        if indent == 0 && (rest.is_empty() || block_scalar) {
+            block = Some((entries.len(), None, block_scalar));
         }
-        entries.push(Entry { parent, key, value, line: n, colon: indent + colon, multiline });
+        entries.push(Entry { parent, key, value, line: n, colon: indent + colon, multiline: block_scalar });
     }
     Ok(entries)
 }
@@ -477,6 +476,19 @@ mod tests {
         assert!(c.save(&["volume"]).is_err());
         write(&path, "theme: nord\n");
         c.save(&["volume"]).unwrap();
+    }
+
+    #[test]
+    fn block_scalars_are_skipped() {
+        let path = temp("block");
+        let text =
+            "notes: |\n  Jazz in the morning: quiet\n  - not a list\n\n  more\ntheme: nord\nabout: >-\n  folded\n";
+        write(&path, text);
+        let mut c = Config::load_from(path.clone());
+        assert_eq!(c.theme, "nord");
+        c.theme = "dracula".into();
+        c.save(&["theme"]).unwrap();
+        assert_eq!(read(&path), text.replace("theme: nord", "theme: dracula"));
     }
 
     #[test]

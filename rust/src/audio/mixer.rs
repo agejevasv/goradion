@@ -12,6 +12,7 @@ pub const PREBUFFER_SECS: f64 = 0.3;
 const CROSSFADE_SECS: f64 = 1.0;
 
 pub struct Mixer {
+    rate: u32,
     current: Option<Consumer<f32>>,
     /// The station switched from, playing out.
     outgoing: Option<Consumer<f32>>,
@@ -27,6 +28,7 @@ pub struct Mixer {
 impl Mixer {
     pub fn new(rate: u32) -> Self {
         Mixer {
+            rate,
             current: None,
             outgoing: None,
             primed: false,
@@ -34,6 +36,11 @@ impl Mixer {
             fade_len: (rate as f64 * CROSSFADE_SECS) as usize,
             prebuffer: (rate as f64 * 2.0 * PREBUFFER_SECS) as usize,
         }
+    }
+
+    /// Of the audio in the queues.
+    pub fn rate(&self) -> u32 {
+        self.rate
     }
 
     /// Tunes in to a new queue. What is audible now plays on until it has

@@ -16,7 +16,7 @@ use crate::log;
 use crate::radiobrowser;
 use crate::stations::Station;
 
-const PAGE: &str = include_str!("../../internal/radio/remote.html");
+const PAGE: &str = include_str!("../remote.html");
 const TOKEN_ALPHABET: &[u8] = b"abcdefghijkmnpqrstuvwxyz23456789";
 pub const TOKEN_LENGTH: usize = 6;
 const MAX_REQUEST_BYTES: u64 = 64 << 10;

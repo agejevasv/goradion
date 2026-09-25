@@ -22,12 +22,12 @@ const QUEUE_SECS: usize = 10;
 const GAIN_SMOOTHING: f32 = 0.001;
 
 pub struct Output {
-    pub rate: u32,
     shared: Arc<Shared>,
     _stop: Option<mpsc::Sender<()>>,
 }
 
 struct Shared {
+    /// The mixer, and the device rate its queues hold audio at.
     mixer: Mutex<Mixer>,
     gain: AtomicU32,
     /// A second gain for fades that leave the volume alone, 0 to 1.
@@ -44,6 +44,16 @@ impl Shared {
             readings: Readings::default(),
         })
     }
+
+    /// A new rate drops the queues, as their audio is at the old one.
+    fn set_rate(&self, rate: u32) {
+        let mut mixer = self.mixer.lock().unwrap();
+        if mixer.rate() != rate {
+            log!("audio output: the rate changed from {} Hz to {rate} Hz", mixer.rate());
+            *mixer = Mixer::new(rate);
+            self.readings.clear();
+        }
+    }
 }
 
 impl Output {
@@ -56,33 +66,35 @@ impl Output {
             .name("audio-output".into())
             .spawn(move || {
                 let lost = Arc::new(AtomicBool::new(false));
-                let (mut stream, rate, shared) = match start_stream(None, lost.clone()) {
+                let (mut stream, _, shared) = match start_stream(None, lost.clone()) {
                     Ok(started) => started,
                     Err(e) => {
                         ready_tx.send(Err(e)).ok();
                         return;
                     }
                 };
-                ready_tx.send(Ok((rate, shared.clone()))).ok();
-                keep_playing(&mut stream, rate, &shared, &lost, &stop_rx);
+                ready_tx.send(Ok(shared.clone())).ok();
+                keep_playing(&mut stream, &shared, &lost, &stop_rx);
             })
             .map_err(|e| e.to_string())?;
-        let (rate, shared) = ready_rx.recv().map_err(|e| e.to_string())??;
-        Ok(Output { rate, shared, _stop: Some(stop_tx) })
+        let shared = ready_rx.recv().map_err(|e| e.to_string())??;
+        Ok(Output { shared, _stop: Some(stop_tx) })
     }
 
     /// An output without a device, whose queues are never played.
     #[cfg(test)]
     pub fn null() -> Output {
-        Output { rate: 48000, shared: Shared::new(48000), _stop: None }
+        Output { shared: Shared::new(48000), _stop: None }
     }
 
-    /// Starts a new queue, which takes over from the one playing once it has
-    /// its prebuffer.
+    /// Starts a new queue at the device rate, which takes over from the one
+    /// playing once it has its prebuffer. A new device rate lets go of it.
     pub fn new_queue(&self) -> Queue {
-        let (producer, consumer) = RingBuffer::new(self.rate as usize * 2 * QUEUE_SECS);
-        self.shared.mixer.lock().unwrap().switch_to(consumer);
-        Queue { producer, prebuffer: (self.rate as f64 * 2.0 * PREBUFFER_SECS) as usize }
+        let mut mixer = self.shared.mixer.lock().unwrap();
+        let rate = mixer.rate();
+        let (producer, consumer) = RingBuffer::new(rate as usize * 2 * QUEUE_SECS);
+        mixer.switch_to(consumer);
+        Queue { producer, rate, prebuffer: (rate as f64 * 2.0 * PREBUFFER_SECS) as usize }
     }
 
     pub fn silence(&self) {
@@ -105,6 +117,12 @@ impl Output {
         self.shared.fade.store(fade.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
+    /// What reopening the device at rate does.
+    #[cfg(test)]
+    pub fn reopen_at(&self, rate: u32) {
+        self.shared.set_rate(rate);
+    }
+
     #[cfg(test)]
     pub fn fade(&self) -> f32 {
         f32::from_bits(self.shared.fade.load(Ordering::Relaxed))
@@ -117,15 +135,16 @@ impl Output {
 
 pub struct Queue {
     pub producer: Producer<f32>,
+    /// Of the audio the queue takes.
+    pub rate: u32,
     pub prebuffer: usize,
 }
 
 /// Holds the stream until stop, rebuilding it on the default device when the
-/// device goes away, such as Bluetooth headphones switched off. The queue stays,
-/// so playback goes on where it was.
+/// device goes away, such as Bluetooth headphones switched off. At the same
+/// rate the queue stays, so playback goes on where it was.
 fn keep_playing(
     stream: &mut Option<cpal::Stream>,
-    rate: u32,
     shared: &Arc<Shared>,
     lost: &Arc<AtomicBool>,
     stop: &mpsc::Receiver<()>,
@@ -141,15 +160,9 @@ fn keep_playing(
         *stream = None;
         lost.store(false, Ordering::Release);
         match start_stream(Some(shared.clone()), lost.clone()) {
-            // The queue holds audio at the old rate; the next station picks
-            // the new one up.
-            Ok((s, new_rate, _)) if new_rate == rate => {
-                log!("audio output: reopened");
+            Ok((s, rate, _)) => {
+                log!("audio output: reopened at {rate} Hz");
                 *stream = s;
-            }
-            Ok((_, new_rate, _)) => {
-                log!("audio output: the new device runs at {new_rate} Hz, not {rate} Hz; retrying");
-                lost.store(true, Ordering::Release);
             }
             Err(e) => {
                 log!("audio output: {e}; retrying");
@@ -159,7 +172,9 @@ fn keep_playing(
     }
 }
 
-/// Opens the default device. The first time, shared is made for its rate.
+/// Opens the default device. The first time, shared is made for its rate;
+/// after that, a device at another rate drops the queues, whose stations
+/// reconnect at the new rate.
 fn start_stream(
     shared: Option<Arc<Shared>>,
     lost: Arc<AtomicBool>,
@@ -171,6 +186,7 @@ fn start_stream(
     let config: StreamConfig = supported.into();
     log!("audio output: {:?} {:?} {} Hz, {} channels", device.id().ok(), format, config.sample_rate, config.channels);
     let shared = shared.unwrap_or_else(|| Shared::new(config.sample_rate));
+    shared.set_rate(config.sample_rate);
     let stream = match format {
         SampleFormat::F32 => build::<f32>(&device, &config, shared.clone(), lost),
         SampleFormat::I16 => build::<i16>(&device, &config, shared.clone(), lost),

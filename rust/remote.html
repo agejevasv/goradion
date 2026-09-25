@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0d12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>goradion</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --surface: #151922;
+    --surface-2: #1d2230;
+    --hairline: rgba(255, 255, 255, .07);
+    --press: rgba(255, 255, 255, .08);
+    --fg: #f3f5f8;
+    --fg-2: #c3c9d4;
+    --muted: #7d8797;
+    --accent: #34d399;
+    --accent-ink: #062b1d;
+    --accent-soft: rgba(52, 211, 153, .14);
+    --danger: #fb7185;
+    --danger-soft: rgba(251, 113, 133, .14);
+    --radius: 18px;
+    --sat: env(safe-area-inset-top);
+    --sab: env(safe-area-inset-bottom);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { background: var(--bg); }
+  body {
+    margin: 0; min-height: 100dvh; color: var(--fg); background: var(--bg);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased; touch-action: manipulation; overscroll-behavior-y: none;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; margin: 0; cursor: pointer; }
+  svg { display: block; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  [hidden] { display: none !important; }
+
+  /* ---------- now playing ---------- */
+  .now {
+    margin: calc(12px + var(--sat)) 16px 8px; padding: 18px 18px 16px; border-radius: 24px;
+    background: linear-gradient(165deg, #1b2130 0%, #12161f 100%);
+    box-shadow: inset 0 0 0 1px var(--hairline), 0 12px 40px rgba(0, 0, 0, .35);
+    transition: box-shadow .4s;
+  }
+  .now.live { box-shadow: inset 0 0 0 1px rgba(52, 211, 153, .35), 0 12px 40px rgba(52, 211, 153, .08); }
+  .now-head { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+  .eq { display: inline-flex; align-items: flex-end; gap: 3px; width: 18px; height: 16px; flex: none; }
+  .eq i { flex: 1; height: 30%; border-radius: 2px; background: var(--accent); opacity: .35; transition: opacity .3s; }
+  .now.live .eq i { opacity: 1; animation: eq 1.1s ease-in-out infinite; }
+  .now.live .eq i:nth-child(2) { animation-delay: .25s; }
+  .now.live .eq i:nth-child(3) { animation-delay: .5s; }
+  @keyframes eq { 0%, 100% { height: 30%; } 50% { height: 100%; } }
+  .chip { font-size: 12px; font-weight: 600; letter-spacing: .02em; padding: 4px 9px; border-radius: 999px;
+    background: var(--surface-2); color: var(--fg-2); white-space: nowrap; }
+  .chip.live { background: var(--accent-soft); color: var(--accent); }
+  .chip.warn { background: var(--danger-soft); color: var(--danger); }
+  .spacer { flex: 1; }
+  .interval { position: relative; display: inline-flex; align-items: center; gap: 6px; }
+  .interval svg { width: 16px; height: 16px; }
+  .interval select { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; }
+  .now h1 { margin: 12px 0 2px; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .np-title { display: flex; align-items: center; gap: 8px; margin: 12px 0 2px; }
+  .np-title h1 { flex: 1; min-width: 0; margin: 0; }
+  .bm { flex: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; color: var(--muted); }
+  .bm:active { background: var(--press); }
+  .bm.on { color: #fbbf24; }
+  .now p { margin: 0; min-height: 22px; color: var(--fg-2); font-size: 15px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .now p.dim { color: var(--muted); }
+
+  .transport { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+  .tbtn {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 66px;
+    border-radius: 16px; background: var(--surface-2); color: var(--fg-2); font-size: 13px; font-weight: 600;
+    transition: transform .1s, background .2s, color .2s;
+  }
+  .tbtn:active { transform: scale(.96); background: var(--press); }
+  .tbtn:disabled { opacity: .35; }
+  .tbtn.on { background: var(--accent); color: var(--accent-ink); }
+  .tbtn.on svg { stroke: var(--accent-ink); }
+  .tbtn.danger:not(:disabled) { color: var(--danger); }
+  .tbtn .num { font-variant-numeric: tabular-nums; }
+
+  .volume { display: flex; align-items: center; gap: 12px; margin-top: 16px; color: var(--muted); }
+  .volume svg { flex: none; }
+  .volume .pct { width: 40px; text-align: right; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 40px; margin: 0; background: transparent; --v: 80%; }
+  input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent) var(--v), var(--surface-2) var(--v)); }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 26px; height: 26px; margin-top: -10px; border-radius: 50%;
+    background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
+  input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--surface-2); }
+  input[type=range]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--accent); }
+  input[type=range]::-moz-range-thumb { width: 26px; height: 26px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
+
+  /* ---------- browse ---------- */
+  .bar { display: flex; align-items: center; gap: 8px; padding: 14px 16px 10px; }
+  .bar .icon { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 14px;
+    background: var(--surface); color: var(--fg-2); }
+  .bar .icon:active { background: var(--press); }
+  .bar .icon.ghost { visibility: hidden; }
+  .titles { flex: 1; min-width: 0; text-align: center; }
+  .titles .title { font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .titles .sub { font-size: 12px; color: var(--muted); }
+
+  .list { list-style: none; margin: 0 16px 24px; padding: 0; border-radius: var(--radius); background: var(--surface); overflow: hidden;
+    box-shadow: inset 0 0 0 1px var(--hairline); animation: fade .2s ease-out; }
+  @keyframes fade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .list li { position: relative; display: flex; align-items: center; gap: 12px; min-height: 58px; padding: 10px 16px 10px 18px; cursor: pointer; }
+  .list li + li::before { content: ""; position: absolute; left: 18px; right: 0; top: 0; height: 1px; background: var(--hairline); }
+  .list li:active { background: var(--press); }
+  .list li .glyph { width: 28px; height: 28px; border-radius: 9px; display: flex; align-items: center; justify-content: center; flex: none;
+    background: var(--surface-2); color: var(--muted); font-size: 13px; font-weight: 700; }
+  .list li .glyph svg { width: 16px; height: 16px; }
+  .list li .glyph.star { color: #fbbf24; background: rgba(251, 191, 36, .14); }
+  .list li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list li .meta { font-size: 12px; color: var(--muted); flex: none; }
+  .list li .bm { margin-right: -8px; }
+  .list li .chev { color: var(--muted); flex: none; width: 18px; height: 18px; }
+  .list li.playing { background: var(--accent-soft); }
+  .list li.playing .name { color: var(--accent); font-weight: 600; }
+  .list li.playing::after { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+  .list li.playing .glyph { background: var(--accent); color: var(--accent-ink); }
+  .list li.playing .eq i { opacity: 1; background: var(--accent-ink); animation: eq 1.1s ease-in-out infinite; }
+  .list li.playing .eq i:nth-child(2) { animation-delay: .25s; }
+  .list li.playing .eq i:nth-child(3) { animation-delay: .5s; }
+  .list li.empty { justify-content: center; color: var(--muted); cursor: default; }
+
+  footer { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 16px calc(24px + var(--sab));
+    color: var(--muted); font-size: 12px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .dot.off { background: var(--danger); }
+
+  #banner { position: fixed; top: calc(10px + var(--sat)); left: 50%; transform: translateX(-50%); z-index: 30; padding: 8px 14px;
+    border-radius: 999px; background: var(--danger); color: #fff; font-size: 13px; font-weight: 600; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  #toast { position: fixed; left: 16px; right: 16px; bottom: calc(20px + var(--sab)); z-index: 30; padding: 12px 16px; border-radius: 14px;
+    background: #2a1a1f; color: #ffd4dc; box-shadow: inset 0 0 0 1px rgba(251,113,133,.4), 0 8px 24px rgba(0,0,0,.4); font-size: 14px; }
+
+  /* ---------- search sheet ---------- */
+  .sheet { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; background: var(--bg); animation: up .22s ease-out; }
+  @keyframes up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .sheet .top { padding: calc(10px + var(--sat)) 16px 10px; display: flex; gap: 10px; align-items: center; }
+  .field { flex: 1; display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 12px; border-radius: 14px; background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--hairline); color: var(--muted); }
+  .field input { flex: 1; min-width: 0; height: 100%; font: inherit; color: var(--fg); background: none; border: 0; outline: none; -webkit-appearance: none; }
+  .field input::placeholder { color: var(--muted); }
+  .sheet .cancel { color: var(--accent); font-weight: 600; padding: 0 4px; }
+  .seg { display: flex; margin: 0 16px 6px; padding: 3px; border-radius: 12px; background: var(--surface); }
+  .seg button { flex: 1; height: 36px; border-radius: 9px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .seg button.on { background: var(--surface-2); color: var(--fg); box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  .hint { margin: 6px 16px 10px; font-size: 12px; color: var(--muted); text-align: center; }
+  .sheet .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: var(--sab); }
+
+  /* ---------- code gate ---------- */
+  .gate { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px 20px; }
+  .card { width: 100%; max-width: 380px; padding: 28px 22px 22px; border-radius: 24px; background: var(--surface);
+    box-shadow: inset 0 0 0 1px var(--hairline), 0 12px 40px rgba(0,0,0,.35); text-align: center; }
+  .logo { width: 56px; height: 56px; margin: 0 auto 14px; border-radius: 18px; display: flex; align-items: center; justify-content: center;
+    background: var(--accent-soft); color: var(--accent); }
+  .logo svg { width: 28px; height: 28px; }
+  .card h2 { margin: 0 0 6px; font-size: 20px; }
+  .card p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+  .code { width: 100%; height: 60px; border: 0; border-radius: 16px; background: var(--bg); color: var(--fg); text-align: center;
+    font: 600 26px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace; letter-spacing: .35em; text-indent: .35em; text-transform: lowercase;
+    outline: none; box-shadow: inset 0 0 0 1px var(--hairline); -webkit-appearance: none; }
+  .code:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+  .code.bad { box-shadow: inset 0 0 0 2px var(--danger); animation: shake .3s; }
+  @keyframes shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  .primary { width: 100%; height: 50px; margin-top: 12px; border-radius: 16px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 16px; }
+  .primary:active { filter: brightness(.9); }
+  .err { margin: 12px 0 0 !important; color: var(--danger) !important; }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4z" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-radio" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="12" rx="3"/><circle cx="8" cy="15" r="2.5"/><path d="M14 13h4M14 17h4"/><path d="m6 9 11-6"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-star-o" viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></symbol>
+</svg>
+
+<div id="banner" hidden>Reconnecting…</div>
+
+<div id="app" hidden>
+  <section class="now" id="now">
+    <div class="now-head">
+      <span class="eq"><i></i><i></i><i></i></span>
+      <span class="chip" id="np-status">Ready</span>
+      <span class="chip" id="np-bitrate" hidden></span>
+      <span class="spacer"></span>
+      <label class="chip interval" title="Shuffle interval">
+        <svg><use href="#i-timer"/></svg><span id="int-label">5 min</span>
+        <select id="shuffle-min"></select>
+      </label>
+    </div>
+    <div class="np-title">
+      <h1 id="np-station">goradion</h1>
+      <button class="bm" id="btn-bm" aria-label="Bookmark" hidden><svg><use href="#i-star-o"/></svg></button>
+    </div>
+    <p id="np-song" class="dim">Pick a station below</p>
+
+    <div class="transport">
+      <button class="tbtn danger" id="btn-stop"><svg><use href="#i-stop"/></svg><span>Stop</span></button>
+      <button class="tbtn" id="btn-random"><svg><use href="#i-dice"/></svg><span>Random</span></button>
+      <button class="tbtn" id="btn-shuffle"><svg><use href="#i-shuffle"/></svg><span id="shuffle-label">Shuffle</span></button>
+      <button class="tbtn" id="btn-sleep"><svg><use href="#i-moon"/></svg><span id="sleep-label">Sleep</span></button>
+    </div>
+
+    <div class="volume">
+      <svg><use href="#i-vol"/></svg>
+      <input type="range" id="vol" min="0" max="100" step="5" value="80" aria-label="Volume">
+      <span class="pct" id="vol-pct">80%</span>
+    </div>
+  </section>
+
+  <div class="bar">
+    <button class="icon ghost" id="btn-back" aria-label="Back to tags"><svg><use href="#i-back"/></svg></button>
+    <div class="titles"><div class="title" id="title">Tags</div><div class="sub" id="subtitle"></div></div>
+    <button class="icon" id="btn-search" aria-label="Search"><svg><use href="#i-search"/></svg></button>
+  </div>
+  <ul class="list" id="list"></ul>
+
+  <footer><span class="dot" id="dot"></span><span id="version"></span></footer>
+</div>
+
+<div id="search" class="sheet" hidden>
+  <div class="top">
+    <label class="field"><svg><use href="#i-search"/></svg>
+      <input type="search" id="q" placeholder="Station name or tag" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+    </label>
+    <button class="cancel" id="btn-cancel">Cancel</button>
+  </div>
+  <div class="seg"><button id="mode-local" class="on">My stations</button><button id="mode-online">Online</button></div>
+  <div class="hint" id="search-hint"></div>
+  <div class="scroll"><ul class="list" id="results" hidden></ul></div>
+</div>
+
+<div id="gate" class="gate" hidden>
+  <form class="card" id="gate-form">
+    <div class="logo"><svg><use href="#i-radio"/></svg></div>
+    <h2>Connect to goradion</h2>
+    <p>Enter the code shown on the computer.<br>Press <b>Ctrl+P</b> in goradion to see it.</p>
+    <input class="code" id="code" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" placeholder="Code" aria-label="Access code">
+    <button class="primary" type="submit">Connect</button>
+    <p class="err" id="gate-err" hidden></p>
+  </form>
+</div>
+
+<div id="toast" hidden></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const KEY = 'goradion-key';
+  let key = '', state = null, listSig = '', playingURL = null, polling = null, volDragging = false;
+  let searchOnline = false, searchTimer = null, searchSeq = 0;
+
+  // --- key handling: QR link (?k=), then a remembered key, else ask. ---
+  const params = new URLSearchParams(location.search);
+  if (params.has('k')) {
+    key = norm(params.get('k'));
+    history.replaceState(null, '', location.pathname);
+  } else {
+    try { key = norm(localStorage.getItem(KEY) || ''); } catch (e) {}
+  }
+  function norm(k) { return (k || '').trim().toLowerCase(); }
+  function remember() { try { localStorage.setItem(KEY, key); } catch (e) {} }
+
+  async function api(path, opts = {}) {
+    opts.headers = Object.assign({'X-Key': key}, opts.headers || {});
+    const res = await fetch(path, opts);
+    if (!res.ok) {
+      const err = new Error((await res.text()).trim() || res.statusText);
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  }
+
+  async function post(path, body) {
+    try {
+      apply(await api(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body || {})}));
+    } catch (e) {
+      if (e.status === 403) return gate('The code has changed. Enter the new one.');
+      toast(e.message);
+    }
+  }
+
+  // --- screens ---
+  function gate(msg) {
+    stopPolling();
+    $('app').hidden = true; $('search').hidden = true; $('banner').hidden = true;
+    $('gate').hidden = false;
+    $('gate-err').hidden = !msg; $('gate-err').textContent = msg || '';
+    const c = $('code'); c.value = ''; c.classList.toggle('bad', !!msg);
+    setTimeout(() => c.focus(), 80);
+  }
+
+  async function connect() {
+    try {
+      const st = await api('/api/state');
+      remember();
+      $('gate').hidden = true; $('app').hidden = false;
+      apply(st);
+      startPolling();
+    } catch (e) {
+      if (e.status === 403 || !key) gate(key ? 'That code is not right. Check the screen and try again.' : '');
+      else { $('app').hidden = false; $('gate').hidden = true; setOnline(false); startPolling(); }
+    }
+  }
+
+  $('gate-form').addEventListener('submit', e => {
+    e.preventDefault();
+    key = norm($('code').value);
+    if (!key) { $('code').classList.add('bad'); return; }
+    connect();
+  });
+  $('code').addEventListener('input', () => $('code').classList.remove('bad'));
+
+  // --- polling ---
+  async function refresh() {
+    if (document.hidden) return;
+    try {
+      apply(await api('/api/state'));
+      setOnline(true);
+    } catch (e) {
+      if (e.status === 403) return gate('The code has changed. Enter the new one.');
+      setOnline(false);
+    }
+  }
+  function startPolling() { stopPolling(); polling = setInterval(refresh, 1000); }
+  function stopPolling() { clearInterval(polling); polling = null; }
+  function setOnline(ok) { $('banner').hidden = ok; $('dot').classList.toggle('off', !ok); }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && polling) refresh(); });
+
+  // --- render ---
+  function apply(st) {
+    state = st;
+    const p = st.player, live = !!p.url;
+    $('now').classList.toggle('live', live && (p.status === 'Playing' || !!p.song));
+    $('np-station').textContent = p.station || 'goradion';
+    const song = $('np-song');
+    if (p.song) { song.textContent = p.song; song.className = ''; }
+    else if (live) { song.textContent = p.status || ''; song.className = 'dim'; }
+    else { song.textContent = 'Pick a station below'; song.className = 'dim'; }
+
+    const status = $('np-status');
+    let label = p.status || 'Ready', cls = 'chip';
+    if (p.song || p.status === 'Playing') { label = 'Live'; cls += ' live'; }
+    else if (p.status && p.status.startsWith('Network')) { label = 'Stream error'; cls += ' warn'; }
+    else if (!live) { label = 'Stopped'; }
+    status.textContent = label; status.className = cls;
+    $('np-bitrate').hidden = !(p.bitrate > 0);
+    $('np-bitrate').textContent = p.bitrate + ' kb/s';
+
+    $('btn-stop').disabled = !live;
+    setStar($('btn-bm'), p.bookmarked);
+    $('btn-bm').hidden = !live;
+    if (!volDragging) setVolume(p.volume);
+
+    const sh = st.shuffle, b = $('btn-shuffle');
+    b.classList.toggle('on', sh.active);
+    $('shuffle-label').textContent = sh.active ? mmss(sh.remaining) : 'Shuffle';
+    $('shuffle-label').className = sh.active ? 'num' : '';
+    const sl = st.sleep;
+    $('btn-sleep').classList.toggle('on', sl.active);
+    $('btn-sleep').disabled = !live && !sl.active;
+    $('sleep-label').textContent = sl.active ? mmss(sl.remaining) : 'Sleep';
+    $('sleep-label').className = sl.active ? 'num' : '';
+    const sel = $('shuffle-min');
+    if (!sel.options.length) for (let i = 1; i <= 9; i++) sel.add(new Option(i + ' min', i));
+    if (+sel.value !== sh.interval) sel.value = sh.interval;
+    $('int-label').textContent = sh.interval + ' min';
+
+    const onStations = st.page === 'stations';
+    $('btn-back').classList.toggle('ghost', !onStations);
+    $('title').textContent = onStations ? (st.tag || 'All Stations') : 'Browse';
+    $('subtitle').textContent = onStations ? plural(st.stations.length, 'station') : plural(st.tags.length, 'tag');
+    $('version').textContent = st.version;
+
+    const sig = JSON.stringify([st.page, st.tag, st.tags, st.stations]);
+    const listChanged = sig !== listSig;
+    if (listChanged) { listSig = sig; renderList(st, onStations); }
+    if (listChanged || p.url !== playingURL) { playingURL = p.url; revealPlaying(); }
+  }
+
+  // Scroll the playing row into view when playback moves elsewhere (Random,
+  // shuffle, the TUI) or a list opens; leave the viewport alone if it is visible.
+  function revealPlaying() {
+    const li = $('list').querySelector('li.playing');
+    if (!li) return;
+    const r = li.getBoundingClientRect();
+    if (r.top >= 0 && r.bottom <= window.innerHeight) return;
+    li.scrollIntoView({block: 'center', behavior: 'smooth'});
+  }
+
+  function renderList(st, onStations) {
+    const ul = $('list');
+    ul.replaceChildren();
+    if (onStations) {
+      if (!st.stations.length) return ul.appendChild(row({name: 'No stations here', empty: true}));
+      for (const s of st.stations) ul.appendChild(row({
+        name: s.title, playing: s.playing, glyph: s.playing ? eq() : icon('#i-radio'),
+        star: s.bookmarked, onstar: () => post('/api/bookmark', {url: s.url}),
+        onclick: () => post('/api/play', {url: s.url})
+      }));
+    } else {
+      for (const t of st.tags) {
+        let glyph = '#', cls = '';
+        if (t.kind === 'bookmarks') { glyph = icon('#i-star'); cls = 'star'; }
+        else if (t.kind === 'search') glyph = icon('#i-search');
+        ul.appendChild(row({
+          name: t.name, glyph, glyphClass: cls, meta: t.kind === 'search' ? (t.online ? 'online search' : 'search') : '',
+          chevron: true, onclick: () => post('/api/tag', {tag: t.name, search: t.kind === 'search'})
+        }));
+      }
+    }
+  }
+
+  function row(o) {
+    const li = document.createElement('li');
+    if (o.empty) { li.className = 'empty'; li.textContent = o.name; return li; }
+    if (o.playing) li.className = 'playing';
+    const g = document.createElement('span'); g.className = 'glyph ' + (o.glyphClass || '');
+    if (typeof o.glyph === 'string') g.textContent = o.glyph; else g.appendChild(o.glyph);
+    li.appendChild(g);
+    const n = document.createElement('span'); n.className = 'name'; n.textContent = o.name; li.appendChild(n);
+    if (o.meta) { const m = document.createElement('span'); m.className = 'meta'; m.textContent = o.meta; li.appendChild(m); }
+    if (o.onstar) {
+      const b = document.createElement('button'); b.className = 'bm'; b.setAttribute('aria-label', 'Bookmark');
+      b.appendChild(icon('')); setStar(b, o.star);
+      b.onclick = e => { e.stopPropagation(); o.onstar(); };
+      li.appendChild(b);
+    }
+    if (o.chevron) { const c = icon('#i-chev'); c.classList.add('chev'); li.appendChild(c); }
+    li.onclick = o.onclick;
+    return li;
+  }
+  function icon(ref) {
+    const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const u = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    u.setAttribute('href', ref); s.appendChild(u); return s;
+  }
+  function setStar(b, on) {
+    b.classList.toggle('on', !!on);
+    b.querySelector('use').setAttribute('href', on ? '#i-star' : '#i-star-o');
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  function eq() { const s = document.createElement('span'); s.className = 'eq'; s.innerHTML = '<i></i><i></i><i></i>'; return s; }
+  function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+  function mmss(sec) { return String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0'); }
+  function setVolume(v) { const s = $('vol'); s.value = v; s.style.setProperty('--v', v + '%'); $('vol-pct').textContent = v + '%'; }
+
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 3200);
+  }
+
+  // --- controls ---
+  $('btn-stop').onclick = () => post('/api/stop');
+  $('btn-random').onclick = () => post('/api/random');
+  $('btn-shuffle').onclick = () => post('/api/shuffle');
+  $('btn-sleep').onclick = () => post('/api/sleep');
+  $('shuffle-min').onchange = e => post('/api/shuffle', {minutes: +e.target.value});
+  $('btn-back').onclick = () => post('/api/tags');
+  $('btn-bm').onclick = () => post('/api/bookmark');
+  const vol = $('vol');
+  vol.addEventListener('input', () => { volDragging = true; setVolume(+vol.value); });
+  vol.addEventListener('change', () => { volDragging = false; post('/api/volume', {volume: +vol.value}); });
+
+  // --- search sheet ---
+  $('btn-search').onclick = () => {
+    $('search').hidden = false; $('q').value = ''; setMode(false);
+    setTimeout(() => $('q').focus(), 60);
+  };
+  $('btn-cancel').onclick = closeSearch;
+  function closeSearch() { $('search').hidden = true; $('q').blur(); }
+  $('mode-local').onclick = () => setMode(false);
+  $('mode-online').onclick = () => setMode(true);
+  function setMode(online) {
+    searchOnline = online;
+    $('mode-local').classList.toggle('on', !online);
+    $('mode-online').classList.toggle('on', online);
+    $('search-hint').textContent = online ? 'Searches radio-browser.info. Press search to run.' : 'Matches names and tags as you type.';
+    $('results').hidden = true; $('results').replaceChildren();
+    if ($('q').value.trim()) runSearch();
+  }
+  $('q').addEventListener('input', () => {
+    if (searchOnline) return;
+    clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 120);
+  });
+  $('q').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runSearch(); $('q').blur(); } });
+
+  async function runSearch() {
+    const q = $('q').value.trim(), ul = $('results'), seq = ++searchSeq;
+    if (!q) { ul.hidden = true; ul.replaceChildren(); return; }
+    if (searchOnline) { ul.hidden = false; ul.replaceChildren(row({name: 'Searching…', empty: true})); }
+    try {
+      const r = await api('/api/search?q=' + encodeURIComponent(q) + (searchOnline ? '&online=1' : ''));
+      if (seq !== searchSeq) return;
+      ul.hidden = false; ul.replaceChildren();
+      if (!r.results.length) return ul.appendChild(row({name: 'No stations found', empty: true}));
+      for (const s of r.results) ul.appendChild(row({
+        name: s.title, meta: s.meta, playing: state && s.url === state.player.url, glyph: icon('#i-radio'),
+        onclick: async () => { await post('/api/search/select', {query: r.query, online: r.online, url: s.url}); closeSearch(); }
+      }));
+    } catch (e) {
+      if (seq !== searchSeq) return;
+      ul.hidden = true; ul.replaceChildren();
+      if (e.status === 403) gate('The code has changed. Enter the new one.'); else toast(e.message);
+    }
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>

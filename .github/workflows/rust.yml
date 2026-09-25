@@ -6,7 +6,7 @@ on:
     # A rust-v tag publishes a pre-release; plain v tags stay with the Go release.
     tags: ['rust-v*']
   pull_request:
-    paths: ['rust/**', 'internal/radio/remote.html', '.github/workflows/rust.yml']
+    paths: ['rust/**', '.github/workflows/rust.yml']
   # New advisories appear without any change here.
   schedule:
     - cron: '0 6 * * 1'

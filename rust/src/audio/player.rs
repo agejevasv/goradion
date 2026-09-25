@@ -287,13 +287,22 @@ impl Inner {
             }
             let never_queued = matches!(result, Err(PlayError::Open(_)));
             let (reason, retry) = match result {
-                Ok(()) => return,
+                // The output let go of the queue while the station was still
+                // tuned in: the device was reopened at another rate.
+                Ok(()) => {
+                    log!("{url}: the output was reopened, reconnecting");
+                    self.update(id, |st| st.info.set_state(State::Buffering, ""));
+                    continue;
+                }
                 Err(PlayError::Open(OpenError::Unsupported(what))) => (what.to_string(), false),
-                Err(PlayError::Decode(DecodeError::Unsupported(what))) => (what, false),
+                Err(PlayError::Decode(DecodeError::Unsupported(what)) | PlayError::Output(what)) => (what, false),
                 Err(PlayError::Decode(DecodeError::Ended)) => ("eof".to_string(), true),
                 Err(e) => (e.to_string(), true),
             };
             log!("{url}: {reason}");
+            // No audio of it plays now, so switching away cancels it rather
+            // than keeping it as the station switched from.
+            queued.store(false, Ordering::Release);
 
             // A station that failed takes the one it was replacing with it;
             // before its audio arrived, what plays is that other station's.
@@ -325,6 +334,9 @@ impl Inner {
                 }
                 thread::sleep(Duration::from_millis(100));
             }
+            if !self.is_current(id) {
+                return;
+            }
             self.update(id, |st| {
                 st.info.set_state(State::Buffering, "");
                 st.info.prev_song.clear();
@@ -341,20 +353,21 @@ impl Inner {
     ) -> Result<(), PlayError> {
         let titles = self.clone();
         let source = source::open(url, Box::new(move |title| titles.set_song(id, title))).map_err(PlayError::Open)?;
-        if cancel.load(Ordering::Relaxed) {
+        // The output must only ever take the queue of the station tuned in.
+        if cancel.load(Ordering::Relaxed) || !self.is_current(id) {
             return Ok(());
         }
         let started = self.clone();
         let queue = self.output.new_queue();
         queued.store(true, Ordering::Release);
-        let mut sink =
-            QueueSink::new(queue, self.output.rate, cancel, Box::new(move || started.set_song(id, String::new())));
+        let mut sink = QueueSink::new(queue, cancel, Box::new(move || started.set_song(id, String::new())));
         let mut on_event = |event| match event {
             Event::Format(f) => self.update(id, |st| st.info.format = f),
             Event::Bitrate(br) => self.update(id, |st| st.info.bitrate = br),
             Event::Title(t) => self.set_song(id, t),
         };
-        decode::run(source, cancel, &mut sink, &mut on_event).map_err(PlayError::Decode)
+        decode::run(source, cancel, &mut sink, &mut on_event).map_err(PlayError::Decode)?;
+        sink.failed.map_or(Ok(()), |e| Err(PlayError::Output(e)))
     }
 
     /// Marks a buffering stream as playing, and records a new song.
@@ -382,6 +395,8 @@ impl Inner {
 enum PlayError {
     Open(OpenError),
     Decode(DecodeError),
+    /// The audio can't be resampled for the device.
+    Output(String),
 }
 
 impl std::fmt::Display for PlayError {
@@ -389,6 +404,7 @@ impl std::fmt::Display for PlayError {
         match self {
             PlayError::Open(e) => e.fmt(f),
             PlayError::Decode(e) => e.fmt(f),
+            PlayError::Output(e) => f.write_str(e),
         }
     }
 }
@@ -397,9 +413,10 @@ impl std::fmt::Display for PlayError {
 /// queue is full.
 struct QueueSink<'a> {
     queue: Queue,
-    out_rate: u32,
     cancel: &'a AtomicBool,
     on_start: Option<Box<dyn FnOnce() + Send>>,
+    /// Why the sink stopped, when it wasn't cancelled or let go of.
+    failed: Option<String>,
     written: usize,
     resampler: Option<(u32, Fft<f32>)>,
     pending: Vec<f32>,
@@ -407,12 +424,12 @@ struct QueueSink<'a> {
 }
 
 impl<'a> QueueSink<'a> {
-    fn new(queue: Queue, out_rate: u32, cancel: &'a AtomicBool, on_start: Box<dyn FnOnce() + Send>) -> Self {
+    fn new(queue: Queue, cancel: &'a AtomicBool, on_start: Box<dyn FnOnce() + Send>) -> Self {
         QueueSink {
             queue,
-            out_rate,
             cancel,
             on_start: Some(on_start),
+            failed: None,
             written: 0,
             resampler: None,
             pending: Vec::new(),
@@ -446,10 +463,10 @@ impl<'a> QueueSink<'a> {
 
     fn resample(&mut self, frames: &[f32], rate: u32) -> bool {
         if self.resampler.as_ref().is_none_or(|(r, _)| *r != rate) {
-            match Fft::new(rate as usize, self.out_rate as usize, RESAMPLE_CHUNK, 2, FixedSync::Input) {
+            match Fft::new(rate as usize, self.queue.rate as usize, RESAMPLE_CHUNK, 2, FixedSync::Input) {
                 Ok(r) => self.resampler = Some((rate, r)),
                 Err(e) => {
-                    log!("resampler {rate} -> {}: {e}", self.out_rate);
+                    self.failed = Some(format!("can't resample {rate} Hz to {} Hz: {e}", self.queue.rate));
                     return false;
                 }
             }
@@ -470,7 +487,7 @@ impl<'a> QueueSink<'a> {
             let (read, wrote) = match result {
                 Ok(n) => n,
                 Err(e) => {
-                    log!("resampling: {e}");
+                    self.failed = Some(format!("resampling: {e}"));
                     return false;
                 }
             };
@@ -489,7 +506,7 @@ impl<'a> QueueSink<'a> {
 
 impl Sink for QueueSink<'_> {
     fn write(&mut self, frames: &[f32], rate: u32) -> bool {
-        if rate == self.out_rate { self.push(frames) } else { self.resample(frames, rate) }
+        if rate == self.queue.rate { self.push(frames) } else { self.resample(frames, rate) }
     }
 }
 
@@ -561,6 +578,54 @@ mod tests {
         assert!(inf.status.contains("HLS"), "{}", inf.status);
         thread::sleep(Duration::from_millis(1500));
         assert_eq!(connections.load(Ordering::Relaxed), 1);
+    }
+
+    /// A station switched from while it waits to retry must not come back
+    /// and take the output over.
+    #[test]
+    fn station_switched_from_during_retry_stays_gone() {
+        let (broken, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", vec![0x55; 2048]);
+        // Answers, then sends nothing: buffering until the read times out.
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let silent = format!("http://{}/stream", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let mut held = Vec::new();
+            for conn in listener.incoming() {
+                let Ok(mut conn) = conn else { continue };
+                let mut req = [0u8; 1024];
+                let _ = conn.read(&mut req);
+                let _ = conn.write_all(b"HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n");
+                held.push(conn);
+            }
+        });
+        let p = online();
+        p.play("Broken", &broken);
+        wait_for(&p, "failed", |i| i.state == State::Failed);
+        p.play("Silent", &silent);
+        // The first retry would come a second after the failure.
+        thread::sleep(Duration::from_millis(2500));
+        assert_eq!(connections.load(Ordering::Relaxed), 1, "the station switched from reconnected");
+        assert_eq!(p.snapshot().station, "Silent");
+    }
+
+    /// MPEG-1 Layer III frames at 128 kbit/s, 44.1 kHz, without audio data:
+    /// silence.
+    fn silent_mp3(frames: usize) -> Vec<u8> {
+        let mut frame = vec![0u8; 417];
+        frame[..4].copy_from_slice(&[0xff, 0xfb, 0x90, 0x00]);
+        frame.repeat(frames)
+    }
+
+    #[test]
+    fn new_device_rate_reconnects() {
+        let (url, connections) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(2000));
+        let p = online();
+        p.play("Silence", &url);
+        wait_for(&p, "playing", |i| i.state == State::Playing);
+        p.inner.output.reopen_at(44100);
+        wait_for(&p, "reconnected", |_| connections.load(Ordering::Relaxed) == 2);
+        let inf = wait_for(&p, "playing again", |i| i.state == State::Playing);
+        assert_eq!(inf.station, "Silence");
     }
 
     #[test]
