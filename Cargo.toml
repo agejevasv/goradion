@@ -1,6 +1,6 @@
 [package]
 name = "goradion"
-version = "0.12.0-pre2"
+version = "0.12.1"
 edition = "2024"
 license = "Unlicense"
 # The newest minimum among the dependencies (ratatui, time); `just msrv` checks it.

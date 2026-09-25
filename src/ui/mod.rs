@@ -514,10 +514,13 @@ impl App {
         Some(url)
     }
 
+    /// Plays the bookmark, or stops it, with the bookmarks shown and the
+    /// cursor on it.
     fn play_bookmark(&mut self, n: usize) {
-        if let Some(s) = self.bookmarks.list().into_iter().nth(n) {
-            self.toggle_play_manual(s);
-        }
+        let Some(s) = self.bookmarks.list().into_iter().nth(n) else { return };
+        self.open_tag(TagRef::new(BOOKMARKS_TAG));
+        self.select_station(&s.url);
+        self.toggle_play_manual(s);
     }
 
     fn change_volume(&mut self, delta: i32) {
@@ -1134,6 +1137,26 @@ pub(crate) mod tests {
         assert_eq!(a.tags_state.filter, "ł@");
         let ctrl_b = altgr_as_typed(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL));
         assert_eq!(ctrl_b.modifiers, KeyModifiers::CONTROL);
+    }
+
+    #[test]
+    fn number_keys_show_the_bookmarks() {
+        for width in [80, 120] {
+            let (mut a, _dir) = test_app();
+            a.sync_layout(width);
+            let (first, second) = (a.stations[0].clone(), a.stations[5].clone());
+            a.bookmarks.toggle(&first);
+            a.bookmarks.toggle(&second);
+            a.on_char('2');
+            assert_eq!((a.page, a.tag.clone()), (Page::Main, Some(TagRef::new(BOOKMARKS_TAG))), "width {width}");
+            assert_eq!(tag_at_cursor(&a), TagRef::new(BOOKMARKS_TAG), "width {width}");
+            let under_cursor = match a.station_rows()[a.stations_state.cursor] {
+                StationRow::Station(i) => a.listed[i].url.clone(),
+                other => format!("{other:?}"),
+            };
+            assert_eq!(under_cursor, second.url, "width {width}");
+            assert_eq!(a.player.snapshot().url, second.url, "width {width}");
+        }
     }
 
     #[test]
