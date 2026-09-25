@@ -265,13 +265,10 @@ fn parse_yaml(text: &str) -> Result<Vec<Entry>, String> {
 /// The line without a comment: `#` at the start or after whitespace, outside
 /// quotes.
 fn strip_comment(line: &str) -> &str {
-    let (mut single, mut double, mut prev_space) = (false, false, true);
-    for (i, c) in line.char_indices() {
-        match c {
-            '\'' if !double => single = !single,
-            '"' if !single => double = !double,
-            '#' if !single && !double && prev_space => return &line[..i],
-            _ => {}
+    let mut prev_space = true;
+    for (i, c, quoted) in scan_quotes(line) {
+        if c == '#' && !quoted && prev_space {
+            return &line[..i];
         }
         prev_space = c.is_whitespace();
     }
@@ -281,17 +278,46 @@ fn strip_comment(line: &str) -> &str {
 /// The colon that ends a key: followed by a space or the line end, outside
 /// quotes.
 fn find_colon(line: &str) -> Option<usize> {
-    let (mut single, mut double) = (false, false);
     let bytes = line.as_bytes();
-    for (i, c) in line.char_indices() {
-        match c {
-            '\'' if !double => single = !single,
-            '"' if !single => double = !double,
-            ':' if !single && !double && (i + 1 == bytes.len() || bytes[i + 1] == b' ') => return Some(i),
-            _ => {}
+    scan_quotes(line)
+        .into_iter()
+        .find(|&(i, c, quoted)| c == ':' && !quoted && (i + 1 == bytes.len() || bytes[i + 1] == b' '))
+        .map(|(i, _, _)| i)
+}
+
+/// The chars of line with their byte offsets, and whether each is part of a
+/// quoted scalar. A quote only opens one at the start of a value, so the
+/// apostrophe in `tag: Children's # note` is plain text.
+fn scan_quotes(line: &str) -> Vec<(usize, char, bool)> {
+    let mut out = Vec::with_capacity(line.len());
+    let mut quote = None;
+    let mut prev = ' ';
+    let mut chars = line.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if let Some(q) = quote {
+            out.push((i, c, true));
+            let escaped = if q == '"' && c == '\\' {
+                chars.next()
+            } else if q == '\'' && c == '\'' {
+                chars.next_if(|&(_, n)| n == '\'')
+            } else {
+                None
+            };
+            if let Some((j, e)) = escaped {
+                out.push((j, e, true));
+            } else if c == q {
+                quote = None;
+            }
+        } else {
+            let opens = matches!(c, '\'' | '"') && (prev.is_whitespace() || "[{,:".contains(prev));
+            if opens {
+                quote = Some(c);
+            }
+            out.push((i, c, opens));
         }
+        prev = c;
     }
-    None
+    out
 }
 
 fn balanced(s: &str) -> bool {
@@ -489,6 +515,18 @@ mod tests {
         c.theme = "dracula".into();
         c.save(&["theme"]).unwrap();
         assert_eq!(read(&path), text.replace("theme: nord", "theme: dracula"));
+    }
+
+    #[test]
+    fn apostrophes_in_plain_values() {
+        let path = temp("apostrophe");
+        write(&path, "tag: Children's # note\nstation: 'it''s # here' # s\n");
+        let mut c = Config::load_from(path.clone());
+        assert_eq!((c.tag.as_str(), c.station.as_str()), ("Children's", "it's # here"));
+        c.tag = "Rock'n'roll".into();
+        c.save(&["tag", "station"]).unwrap();
+        assert_eq!(read(&path), "tag: Rock'n'roll # note\nstation: \"it's # here\" # s\n");
+        assert_eq!(Config::load_from(path.clone()), c);
     }
 
     #[test]

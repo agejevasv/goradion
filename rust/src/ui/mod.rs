@@ -465,15 +465,17 @@ impl App {
             return None;
         }
         let current = self.player.snapshot().url;
-        let mut rng = rand::rng();
-        let mut pick = choices[rng.random_range(0..choices.len())];
-        while choices.len() > 1 && self.listed[pick.1].url == current {
-            pick = choices[rng.random_range(0..choices.len())];
-        }
+        let others: Vec<(usize, usize)> =
+            choices.iter().copied().filter(|&(_, i)| self.listed[i].url != current).collect();
+        // Only the station playing is listed: it plays on rather than stopping.
+        let pool = if others.is_empty() { &choices } else { &others };
+        let pick = pool[rand::rng().random_range(0..pool.len())];
         self.stations_state.cursor = pick.0;
         let station = self.listed[pick.1].clone();
         let url = station.url.clone();
-        self.toggle_play(station);
+        if url != current {
+            self.toggle_play(station);
+        }
         Some(url)
     }
 

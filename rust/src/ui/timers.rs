@@ -176,6 +176,19 @@ mod tests {
         assert!(!a.shuffle.active, "playing a station must end the shuffle");
     }
 
+    /// A list of only the station playing, even listed twice, keeps it on.
+    #[test]
+    fn shuffle_on_the_station_playing() {
+        let (mut a, _dir) = test_app();
+        let s = a.stations[0].clone();
+        a.open_search("x", vec![s.clone(), s.clone()], false);
+        a.toggle_play_manual(s.clone());
+        let now = Instant::now();
+        a.toggle_shuffle(now);
+        a.tick(now + a.shuffle.interval);
+        assert_eq!(url(&a), s.url);
+    }
+
     #[test]
     fn shuffle_interval() {
         let (mut a, _dir) = test_app();
