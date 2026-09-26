@@ -51,6 +51,8 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(50);
 const IDLE_INTERVAL: Duration = Duration::from_millis(250);
 /// How often phone requests are answered when nothing else wakes the loop.
 const REMOTE_INTERVAL: Duration = Duration::from_millis(100);
+/// How long the exit on a signal may take before the process ends anyway.
+const EXIT_GRACE: Duration = Duration::from_secs(2);
 
 const BOOKMARKS_TAG: &str = "Bookmarks";
 const ALL_STATIONS_TAG: &str = "All Stations";
@@ -227,7 +229,7 @@ impl App {
     }
 
     pub fn run(mut self) -> io::Result<()> {
-        let signalled = exit_signals();
+        let signalled = exit_signals(self.player.clone());
         if self.remote_settings.autostart
             && let Err(e) = self.start_remote()
         {
@@ -1014,15 +1016,37 @@ fn input_events() -> Receiver<io::Result<Event>> {
 }
 
 /// Set when the terminal window is closed (SIGHUP), and by SIGTERM and SIGINT;
-/// the loop then ends as on quit, and the session is saved.
-fn exit_signals() -> Arc<AtomicBool> {
+/// the loop then ends as on quit, and the session is saved. The sound stops
+/// at once and the process exits after `EXIT_GRACE` regardless: on macOS a
+/// write to a closed terminal can block, leaving the queued audio playing.
+fn exit_signals(player: Player) -> Arc<AtomicBool> {
     let flag = Arc::new(AtomicBool::new(false));
     #[cfg(unix)]
-    for signal in [signal_hook::consts::SIGHUP, signal_hook::consts::SIGTERM, signal_hook::consts::SIGINT] {
-        if let Err(e) = signal_hook::flag::register(signal, flag.clone()) {
+    {
+        use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+        let mut signals = match signal_hook::iterator::Signals::new([SIGHUP, SIGTERM, SIGINT]) {
+            Ok(s) => s,
+            Err(e) => {
+                crate::log!("signals: {e}");
+                return flag;
+            }
+        };
+        let signalled = flag.clone();
+        let spawned = std::thread::Builder::new().name("signals".into()).spawn(move || {
+            if signals.forever().next().is_some() {
+                signalled.store(true, Ordering::Relaxed);
+                player.stop();
+                std::thread::sleep(EXIT_GRACE);
+                crate::log!("signals: the exit hung; exiting");
+                std::process::exit(0);
+            }
+        });
+        if let Err(e) = spawned {
             crate::log!("signals: {e}");
         }
     }
+    #[cfg(not(unix))]
+    drop(player);
     flag
 }
 
