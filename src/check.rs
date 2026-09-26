@@ -33,7 +33,7 @@ enum Outcome {
 
 fn check(url: &str) -> Outcome {
     let owned = url.to_string();
-    let source = match source::open(url, Box::new(move |t| log!("{owned}: icy title {t:?}"))) {
+    let source = match source::open(url, 0, Box::new(move |t| log!("{owned}: icy title {t:?}"))) {
         Ok(s) => s,
         Err(OpenError::Unsupported(what)) => return Outcome::Unsupported(what.to_string()),
         Err(e) => return Outcome::Dead(e.to_string()),

@@ -234,7 +234,12 @@ impl Card {
             State::Buffering => left.push(seg(format!("Buffering{}", g.ellipsis), t.dim())),
             State::Failed => {
                 left.push(seg(inf.status.as_str(), danger));
-                left.push(seg(format!(" {} retrying", g.dot), t.dim()));
+                let wait = inf.retry_at.and_then(|at| at.duration_since(now).ok()).unwrap_or_default();
+                let retry = match wait.as_millis().div_ceil(1000) {
+                    0 => "retrying".to_string(),
+                    secs => format!("retry in {secs}s"),
+                };
+                left.push(seg(format!(" {} {retry}", g.dot), t.dim()));
             }
             State::Unsupported => left.push(seg(inf.status.as_str(), danger)),
             State::Playing => {

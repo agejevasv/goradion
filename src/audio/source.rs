@@ -3,6 +3,7 @@
 use std::io::{self, BufRead, Read};
 
 use super::http;
+use crate::log;
 
 const MAX_PLAYLIST: u64 = 64 * 1024;
 const MAX_PLAYLIST_DEPTH: usize = 3;
@@ -37,7 +38,9 @@ impl From<io::Error> for OpenError {
     }
 }
 
-pub fn open(url: &str, on_title: TitleFn) -> Result<Source, OpenError> {
+/// Opens url; a playlist gives its stream at index mirror, wrapping around,
+/// so that retries go through the mirrors it lists.
+pub fn open(url: &str, mirror: usize, on_title: TitleFn) -> Result<Source, OpenError> {
     let mut url = url.to_string();
     for _ in 0..MAX_PLAYLIST_DEPTH {
         let mut resp = http::get(&url, &[("Icy-MetaData", "1")])?;
@@ -51,8 +54,15 @@ pub fn open(url: &str, on_title: TitleFn) -> Result<Source, OpenError> {
             if text.contains("#EXT-X-") {
                 return Err(OpenError::Unsupported("HLS streams are not supported yet"));
             }
-            let entry = first_entry(&text).ok_or(OpenError::Unsupported("empty playlist"))?;
-            url = resp.url.join(&entry).map(String::from).unwrap_or(entry);
+            let entries = entries(&text);
+            if entries.is_empty() {
+                return Err(OpenError::Unsupported("empty playlist"));
+            }
+            let entry = &entries[mirror % entries.len()];
+            if entries.len() > 1 {
+                log!("{url}: stream {} of {}", mirror % entries.len() + 1, entries.len());
+            }
+            url = resp.url.join(entry).map_or_else(|_| entry.clone(), String::from);
             continue;
         }
 
@@ -85,21 +95,25 @@ fn is_playlist(mime: Option<&str>, head: &[u8]) -> bool {
     ["[playlist]", "#extm3u", "http://", "https://"].iter().any(|p| head.starts_with(p))
 }
 
-/// The first stream of a PLS or M3U playlist.
-fn first_entry(text: &str) -> Option<String> {
+/// The streams of a PLS or M3U playlist.
+fn entries(text: &str) -> Vec<String> {
     let lines = text.lines().map(str::trim);
-    for line in lines.clone() {
-        if let Some((key, value)) = line.split_once('=')
-            && key.to_ascii_lowercase().starts_with("file")
-            && !value.trim().is_empty()
-        {
-            return Some(value.trim().to_string());
-        }
+    let pls: Vec<String> = lines
+        .clone()
+        .filter_map(|line| {
+            let (key, value) = line.split_once('=')?;
+            let value = value.trim();
+            (key.to_ascii_lowercase().starts_with("file") && !value.is_empty()).then(|| value.to_string())
+        })
+        .collect();
+    if !pls.is_empty() {
+        return pls;
     }
     lines
         .filter(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with('['))
-        .find(|l| !l.contains('=') || l.contains("://"))
+        .filter(|l| !l.contains('=') || l.contains("://"))
         .map(String::from)
+        .collect()
 }
 
 /// `icy-br` is sometimes a list such as "128,128".
@@ -166,9 +180,10 @@ mod tests {
     #[test]
     fn playlists() {
         let pls = "[playlist]\nNumberOfEntries=2\nFile1=http://a/stream\nTitle1=A\nFile2=http://b\n";
-        assert_eq!(first_entry(pls).as_deref(), Some("http://a/stream"));
-        let m3u = "#EXTM3U\n#EXTINF:-1,A\n\nhttps://a/b.mp3\n";
-        assert_eq!(first_entry(m3u).as_deref(), Some("https://a/b.mp3"));
+        assert_eq!(entries(pls), ["http://a/stream", "http://b"]);
+        let m3u = "#EXTM3U\n#EXTINF:-1,A\n\nhttps://a/b.mp3\n#EXTINF:-1,B\nhttps://c/d.mp3\n";
+        assert_eq!(entries(m3u), ["https://a/b.mp3", "https://c/d.mp3"]);
+        assert!(entries("[playlist]\nNumberOfEntries=0\n").is_empty());
         assert!(is_playlist(Some("text/plain"), b"[playlist]\n"));
         assert!(is_playlist(Some("audio/x-mpegurl"), b""));
         assert!(!is_playlist(Some("audio/mpeg"), b"\xff\xfb\x90"));

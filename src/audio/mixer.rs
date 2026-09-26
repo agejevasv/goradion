@@ -1,6 +1,7 @@
 //! Plays the queue of the station tuned in, crossfading from the previous one.
 //! The previous station keeps playing until the new one has its prebuffer, so
-//! switching has no gap however long the new one takes to connect.
+//! switching has no gap however long the new one takes to connect. A station
+//! that runs dry waits for a longer buffer, then fades back in.
 
 use std::f32::consts::FRAC_PI_2;
 
@@ -9,7 +10,11 @@ use rtrb::chunks::ReadChunk;
 
 /// Seconds queued before a station starts.
 pub const PREBUFFER_SECS: f64 = 0.3;
+/// Seconds queued before a station that ran dry goes on: its network is
+/// slower than the stream, and a short buffer would only stutter.
+const REBUFFER_SECS: f64 = 2.0;
 const CROSSFADE_SECS: f64 = 1.0;
+const RESUME_FADE_SECS: f64 = 0.2;
 
 pub struct Mixer {
     rate: u32,
@@ -18,23 +23,34 @@ pub struct Mixer {
     outgoing: Option<Consumer<f32>>,
     /// The current queue reached its prebuffer.
     primed: bool,
+    /// The current queue started, then ran dry.
+    stalled: bool,
     /// Frames of the crossfade played.
     faded: usize,
     fade_len: usize,
+    /// Frames of the fade in after a stall played.
+    resumed: usize,
+    resume_len: usize,
     /// In samples.
     prebuffer: usize,
+    rebuffer: usize,
 }
 
 impl Mixer {
     pub fn new(rate: u32) -> Self {
+        let resume_len = ((rate as f64 * RESUME_FADE_SECS) as usize).max(1);
         Mixer {
             rate,
             current: None,
             outgoing: None,
             primed: false,
+            stalled: false,
             faded: 0,
             fade_len: (rate as f64 * CROSSFADE_SECS) as usize,
+            resumed: resume_len,
+            resume_len,
             prebuffer: (rate as f64 * 2.0 * PREBUFFER_SECS) as usize,
+            rebuffer: (rate as f64 * 2.0 * REBUFFER_SECS) as usize,
         }
     }
 
@@ -51,7 +67,9 @@ impl Mixer {
         }
         self.current = Some(queue);
         self.primed = false;
+        self.stalled = false;
         self.faded = 0;
+        self.resumed = self.resume_len;
     }
 
     /// Drops the current queue unless it started, so that a station switched
@@ -63,19 +81,31 @@ impl Mixer {
         self.primed
     }
 
-    /// Whether the current queue started, or starts with the next mix as it
-    /// has its prebuffer.
+    /// Whether the current queue plays, or plays with the next mix as it has
+    /// its prebuffer, or after a stall the longer one.
     fn prime(&mut self) -> bool {
-        if !self.primed && self.current.as_ref().is_some_and(|c| c.slots() >= self.prebuffer) {
+        let need = if self.stalled { self.rebuffer } else { self.prebuffer };
+        if !self.primed && self.current.as_ref().is_some_and(|c| c.slots() >= need) {
             self.primed = true;
+            if self.stalled {
+                self.stalled = false;
+                self.resumed = 0;
+            }
         }
         self.primed
+    }
+
+    /// Whether the current queue ran dry and waits for its buffer.
+    #[cfg(test)]
+    pub fn stalled(&self) -> bool {
+        self.stalled
     }
 
     pub fn clear(&mut self) {
         self.current = None;
         self.outgoing = None;
         self.primed = false;
+        self.stalled = false;
     }
 
     /// Stops the station switched from at once.
@@ -99,7 +129,11 @@ impl Mixer {
         let fading = old.is_some();
         for (i, frame) in out.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let (new_gain, old_gain) = match (fading, self.primed) {
-                (false, _) => (1.0, 0.0),
+                (false, _) => {
+                    let gain = self.resumed as f32 / self.resume_len as f32;
+                    self.resumed = (self.resumed + 1).min(self.resume_len);
+                    (gain, 0.0)
+                }
                 (true, false) => (0.0, 1.0),
                 (true, true) => {
                     // Equal power, so the loudness holds through the fade.
@@ -115,6 +149,11 @@ impl Mixer {
         }
         let len = |c: &Option<ReadChunk<'_, f32>>| c.as_ref().map_or(0, ReadChunk::len);
         let audible = len(&new).max(len(&old)) / 2;
+        // Ran dry, not mid crossfade, where the station switched from covers.
+        if self.primed && !fading && len(&new) < frames * 2 {
+            self.primed = false;
+            self.stalled = true;
+        }
         if let Some(c) = new {
             c.commit_all();
         }
@@ -220,6 +259,46 @@ mod tests {
         fill(&mut b, -1.0, 500);
         assert!(run(&mut m, 10).iter().all(|&s| s == -1.0), "B starts without a fade from A");
         assert!(m.keep_if_started());
+    }
+
+    #[test]
+    fn a_station_that_ran_dry_waits_for_the_longer_buffer_then_fades_in() {
+        let mut m = Mixer::new(RATE);
+        let (mut a, c) = queue();
+        m.switch_to(c);
+        fill(&mut a, 1.0, 500);
+        assert!(run(&mut m, 400).iter().all(|&s| s == 1.0));
+        let dry = run(&mut m, 200);
+        assert!(dry[..100].iter().all(|&s| s == 1.0) && dry[100..].iter().all(|&s| s == 0.0));
+        assert!(m.stalled());
+
+        // The first buffer's worth is not enough now.
+        fill(&mut a, 1.0, 500);
+        assert!(run(&mut m, 10).iter().all(|&s| s == 0.0));
+        assert!(m.stalled());
+        fill(&mut a, 1.0, 1500);
+        let back = run(&mut m, 400);
+        assert!(!m.stalled());
+        assert_eq!(back[0], 0.0);
+        assert!((back[100] - 0.5).abs() < 0.01, "halfway through the fade in: {}", back[100]);
+        assert!(back[200..].iter().all(|&s| s == 1.0));
+    }
+
+    /// Switching away from a stalled station drops it: it has nothing to play
+    /// out.
+    #[test]
+    fn a_stalled_station_is_not_kept() {
+        let mut m = Mixer::new(RATE);
+        let (mut a, c) = queue();
+        m.switch_to(c);
+        fill(&mut a, 1.0, 500);
+        run(&mut m, 600);
+        assert!(m.stalled());
+        assert!(!m.keep_if_started());
+        assert!(a.is_abandoned());
+        let (_b, c) = queue();
+        m.switch_to(c);
+        assert!(!m.stalled());
     }
 
     #[test]

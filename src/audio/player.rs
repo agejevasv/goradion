@@ -63,6 +63,8 @@ pub struct Info {
     pub bitrate: u32,
     /// Codec and sample rate, such as "mp3 44100 Hz".
     pub format: String,
+    /// When the next attempt starts, while a failed station waits for it.
+    pub retry_at: Option<SystemTime>,
     /// Replaced, never modified in place, so snapshots can share it.
     pub history: Arc<Vec<Track>>,
 }
@@ -175,6 +177,7 @@ impl Player {
         info.format.clear();
         info.song.clear();
         info.prev_song.clear();
+        info.retry_at = None;
         drop(st);
         self.inner.notify();
 
@@ -262,6 +265,7 @@ impl Inner {
         info.prev_song.clear();
         info.bitrate = 0;
         info.format.clear();
+        info.retry_at = None;
         self.notify();
     }
 
@@ -280,8 +284,11 @@ impl Inner {
     }
 
     fn run_session(self: Arc<Self>, id: u64, url: &str, cancel: &AtomicBool, queued: &AtomicBool) {
+        // Of a playlist that lists several streams; an attempt that never
+        // played moves on to the next.
+        let mut mirror = 0;
         loop {
-            let result = self.play_once(id, url, cancel, queued);
+            let result = self.play_once(id, url, mirror, cancel, queued);
             // A station switched from ends here, whatever went wrong.
             if cancel.load(Ordering::Relaxed) || !self.is_current(id) {
                 return;
@@ -302,6 +309,7 @@ impl Inner {
             };
             log!("{url}: {reason}");
             let mut delay = Duration::ZERO;
+            let mut played = false;
             // Under the lock, so that a station switched to meanwhile keeps
             // the output.
             self.update(id, |st| {
@@ -319,16 +327,21 @@ impl Inner {
                 if let Some(c) = st.outgoing.take() {
                     c.store(true, Ordering::Relaxed);
                 }
+                played = st.info.state == State::Playing;
                 if retry {
                     let s = st.session.as_mut().unwrap();
                     delay = (Duration::from_secs(1) * 2u32.saturating_pow(s.retries)).min(MAX_RETRY_DELAY);
                     s.retries += 1;
+                    st.info.retry_at = Some(SystemTime::now() + delay);
                 }
                 st.info.set_state(if retry { State::Failed } else { State::Unsupported }, &reason);
                 st.info.song.clear();
             });
             if !retry {
                 return;
+            }
+            if !played {
+                mirror += 1;
             }
             let until = std::time::Instant::now() + delay;
             while std::time::Instant::now() < until {
@@ -340,7 +353,10 @@ impl Inner {
             if !self.is_current(id) {
                 return;
             }
-            self.update(id, |st| st.info.set_state(State::Buffering, ""));
+            self.update(id, |st| {
+                st.info.set_state(State::Buffering, "");
+                st.info.retry_at = None;
+            });
         }
     }
 
@@ -348,11 +364,13 @@ impl Inner {
         self: &Arc<Self>,
         id: u64,
         url: &str,
+        mirror: usize,
         cancel: &AtomicBool,
         queued: &AtomicBool,
     ) -> Result<(), PlayError> {
         let titles = self.clone();
-        let source = source::open(url, Box::new(move |title| titles.set_song(id, title))).map_err(PlayError::Open)?;
+        let on_title = Box::new(move |title| titles.set_song(id, title));
+        let source = source::open(url, mirror, on_title).map_err(PlayError::Open)?;
         // The output must only ever take the queue of the station tuned in,
         // and `play` must know whether it did.
         let queue = {
@@ -597,11 +615,41 @@ mod tests {
         p.play("Broken", &url);
         let inf = wait_for(&p, "failed", |i| i.state == State::Failed);
         assert!(inf.status.starts_with("Network or stream issues"), "{}", inf.status);
+        let wait = inf.retry_at.unwrap().duration_since(SystemTime::now()).unwrap_or_default();
+        assert!(wait <= Duration::from_secs(1), "{wait:?}");
         // The first retry comes after a second.
         wait_for(&p, "retried", |_| connections.load(Ordering::Relaxed) >= 2);
         p.stop();
         let inf = p.snapshot();
-        assert_eq!((inf.state, inf.url.as_str()), (State::Stopped, ""));
+        assert_eq!((inf.state, inf.url.as_str(), inf.retry_at), (State::Stopped, "", None));
+    }
+
+    /// A playlist's mirrors take turns: a dead first one isn't retried
+    /// forever.
+    #[test]
+    fn retries_go_through_the_mirrors() {
+        let (stream, _) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(2000));
+        let pls = format!("[playlist]\nFile1=http://127.0.0.1:1/dead\nFile2={stream}\nNumberOfEntries=2\n");
+        let (url, _) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n", pls.into_bytes());
+        let p = online();
+        p.play("Mirrors", &url);
+        wait_for(&p, "failed on the first", |i| i.state == State::Failed);
+        wait_for(&p, "playing the second", |i| i.state == State::Playing);
+    }
+
+    /// A mirror that played is tried again before the next one.
+    #[test]
+    fn a_mirror_that_played_is_kept() {
+        let (first, first_count) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(100));
+        let (second, second_count) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n", silent_mp3(100));
+        let pls = format!("[playlist]\nFile1={first}\nFile2={second}\n");
+        let (url, _) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n", pls.into_bytes());
+        let p = online();
+        p.play("Mirrors", &url);
+        // The short stream plays, then ends.
+        wait_for(&p, "playing", |i| i.state == State::Playing);
+        wait_for(&p, "reconnected", |_| first_count.load(Ordering::Relaxed) >= 2);
+        assert_eq!(second_count.load(Ordering::Relaxed), 0);
     }
 
     #[test]
