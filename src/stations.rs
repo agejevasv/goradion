@@ -62,7 +62,7 @@ mod tests {
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].tags, ["Jazz", "Lounge"]);
         assert_eq!(got[1].title, "B, the station");
-        assert!(got[1].tags.is_empty());
+        assert_eq!(got[1].tags, Vec::<String>::new());
     }
 
     #[test]

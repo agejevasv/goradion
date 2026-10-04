@@ -54,6 +54,7 @@ const IDLE_INTERVAL: Duration = Duration::from_millis(250);
 /// How often phone requests are answered when nothing else wakes the loop.
 const REMOTE_INTERVAL: Duration = Duration::from_millis(100);
 /// How long the exit on a signal may take before the process ends anyway.
+#[cfg(unix)]
 const EXIT_GRACE: Duration = Duration::from_secs(2);
 
 const BOOKMARKS_TAG: &str = "Bookmarks";

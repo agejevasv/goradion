@@ -377,7 +377,7 @@ mod tests {
             assert_eq!(t.len(), TOKEN_LENGTH);
             assert!(seen.insert(t));
         }
-        assert!(!lan_ip().is_empty());
+        assert_ne!(lan_ip(), "");
     }
 
     #[test]

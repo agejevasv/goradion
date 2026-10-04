@@ -260,6 +260,6 @@ mod tests {
         assert_eq!(volume(&a), DEFAULT_VOLUME - VOLUME_STEP);
         a.cycle_sleep(now); // 30 minutes: starts over
         assert!((a.player.fade() - 1.0).abs() < f32::EPSILON);
-        assert!(!url(&a).is_empty());
+        assert_ne!(url(&a), "");
     }
 }

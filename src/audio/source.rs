@@ -183,7 +183,7 @@ mod tests {
         assert_eq!(entries(pls), ["http://a/stream", "http://b"]);
         let m3u = "#EXTM3U\n#EXTINF:-1,A\n\nhttps://a/b.mp3\n#EXTINF:-1,B\nhttps://c/d.mp3\n";
         assert_eq!(entries(m3u), ["https://a/b.mp3", "https://c/d.mp3"]);
-        assert!(entries("[playlist]\nNumberOfEntries=0\n").is_empty());
+        assert_eq!(entries("[playlist]\nNumberOfEntries=0\n"), Vec::<String>::new());
         assert!(is_playlist(Some("text/plain"), b"[playlist]\n"));
         assert!(is_playlist(Some("audio/x-mpegurl"), b""));
         assert!(!is_playlist(Some("audio/mpeg"), b"\xff\xfb\x90"));

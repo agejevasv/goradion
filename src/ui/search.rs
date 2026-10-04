@@ -414,8 +414,8 @@ mod tests {
         assert_eq!(titles("SOMA jazz"), ["SomaFM: Bossa Beyond"]);
         assert_eq!(titles("jazz"), ["SomaFM: Bossa Beyond", "Linn Jazz"]);
         assert_eq!(titles("electro soma"), ["SomaFM: Groove Salad"]);
-        assert!(titles("polka").is_empty());
-        assert!(titles("  ").is_empty());
+        assert_eq!(titles("polka"), Vec::<String>::new());
+        assert_eq!(titles("  "), Vec::<String>::new());
     }
 
     #[test]
@@ -448,7 +448,7 @@ mod tests {
         assert!(a.modal.is_none());
         assert_eq!(a.page, Page::Main);
         assert_eq!(a.tag, Some(TagRef::search("groove")));
-        assert!(!a.player.snapshot().url.is_empty());
+        assert_ne!(a.player.snapshot().url, "");
     }
 
     #[test]
