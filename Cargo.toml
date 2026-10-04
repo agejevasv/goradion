@@ -1,6 +1,6 @@
 [package]
 name = "goradion"
-version = "0.12.1"
+version = "0.13.0"
 edition = "2024"
 license = "Unlicense"
 # The newest minimum among the dependencies (ratatui, time); `just msrv` checks it.
@@ -28,6 +28,9 @@ webpki-roots = "1.0.9"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4.4"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5.19.0"
 
 [profile.release]
 lto = true

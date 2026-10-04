@@ -4,6 +4,8 @@ mod card;
 pub mod glyphs;
 mod help;
 mod list;
+#[cfg(target_os = "linux")]
+mod mpris;
 mod remote;
 mod search;
 mod session;
@@ -16,7 +18,7 @@ use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::time::{Duration, Instant, SystemTime};
 
 use rand::RngExt;
@@ -77,6 +79,15 @@ enum Modal {
     Search(Box<search::Search>),
     /// The error when the server could not start.
     Remote(Option<String>),
+}
+
+/// What wakes the UI loop.
+enum Wake {
+    Input(io::Result<Event>),
+    #[cfg(target_os = "linux")]
+    Mpris(crate::mpris::Command),
+    #[cfg(target_os = "linux")]
+    MprisStarted(crate::mpris::Mpris),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -157,6 +168,8 @@ pub struct App {
     modal_area: Rect,
     remote: Option<(crate::remote::Server, Receiver<crate::remote::Call>)>,
     remote_settings: RemoteSettings,
+    #[cfg(target_os = "linux")]
+    mpris: Option<crate::mpris::Mpris>,
     /// The terminal's default background as last set by `sync_term_bg`.
     term_bg: ratatui::style::Color,
 
@@ -221,6 +234,8 @@ impl App {
             modal_area: Rect::default(),
             remote: None,
             remote_settings,
+            #[cfg(target_os = "linux")]
+            mpris: None,
             term_bg: ratatui::style::Color::Reset,
             config,
         };
@@ -237,9 +252,13 @@ impl App {
             crate::log!("remote: {e}");
             self.toggle_remote_modal();
         }
+        let (wake, events) = mpsc::channel();
+        #[cfg(target_os = "linux")]
+        mpris::start(wake.clone());
+        input_events(wake);
         let mut terminal = ratatui::init();
         execute!(io::stdout(), EnableMouseCapture)?;
-        let result = self.event_loop(&mut terminal, &signalled);
+        let result = self.event_loop(&mut terminal, &events, &signalled);
         // Before the terminal: after a hangup it is gone.
         self.save_session();
         self.look.t = theme::THEMES[0];
@@ -258,12 +277,18 @@ impl App {
         if signalled.load(Ordering::Relaxed) { Ok(()) } else { result }
     }
 
-    fn event_loop(&mut self, terminal: &mut DefaultTerminal, signalled: &AtomicBool) -> io::Result<()> {
-        let events = input_events();
+    fn event_loop(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+        events: &Receiver<Wake>,
+        signalled: &AtomicBool,
+    ) -> io::Result<()> {
         while !self.quit && !signalled.load(Ordering::Relaxed) {
             self.tick(Instant::now());
             self.poll_search();
             self.poll_remote();
+            #[cfg(target_os = "linux")]
+            self.sync_mpris();
             self.sync_term_bg();
             let now = SystemTime::now();
             self.card.update(self.player.snapshot(), now);
@@ -285,11 +310,17 @@ impl App {
                 received => received.ok(),
             };
             // Everything queued before the next frame.
-            while let Some(event) = next {
-                match event? {
-                    Event::Key(k) if k.kind != KeyEventKind::Release => self.on_key(k),
-                    Event::Mouse(m) => self.on_mouse(m),
-                    _ => {}
+            while let Some(wake) = next {
+                match wake {
+                    Wake::Input(event) => match event? {
+                        Event::Key(k) if k.kind != KeyEventKind::Release => self.on_key(k),
+                        Event::Mouse(m) => self.on_mouse(m),
+                        _ => {}
+                    },
+                    #[cfg(target_os = "linux")]
+                    Wake::Mpris(c) => self.on_mpris(c),
+                    #[cfg(target_os = "linux")]
+                    Wake::MprisStarted(m) => self.mpris = Some(m),
                 }
                 next = if self.quit { None } else { events.try_recv().ok() };
             }
@@ -998,21 +1029,19 @@ fn altgr_as_typed(mut k: KeyEvent) -> KeyEvent {
 
 /// Terminal input, read on a thread of its own: once the terminal is gone,
 /// crossterm's read spins and never returns, and the loop has to end.
-fn input_events() -> Receiver<io::Result<Event>> {
-    let (tx, rx) = mpsc::channel();
+fn input_events(tx: Sender<Wake>) {
     std::thread::Builder::new()
         .name("input".into())
         .spawn(move || {
             loop {
                 let event = event::read();
                 let failed = event.is_err();
-                if tx.send(event).is_err() || failed {
+                if tx.send(Wake::Input(event)).is_err() || failed {
                     return;
                 }
             }
         })
         .expect("spawning a thread");
-    rx
 }
 
 /// Set when the terminal window is closed (SIGHUP), and by SIGTERM and SIGINT;

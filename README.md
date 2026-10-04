@@ -27,6 +27,10 @@ Or in a clone, `cargo build --release` leaves the binary in `target/release/`.
 ## Remote control
 `Ctrl+P` shows a QR code and an access code, to control goradion from a phone on the same network.
 
+## Media keys
+On Linux, media keys, desktop media widgets and `playerctl` control goradion over MPRIS.
+Next and previous play the adjacent station of the list it was started from; pause stops.
+
 ## Themes
 `Ctrl+T` picks a colour theme, saved in the [config](#config).
 

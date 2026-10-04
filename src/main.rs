@@ -4,6 +4,8 @@ mod check;
 mod config;
 mod files;
 mod log;
+#[cfg(target_os = "linux")]
+mod mpris;
 mod radiobrowser;
 mod remote;
 mod stations;
