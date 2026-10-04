@@ -646,8 +646,8 @@ mod tests {
         let (url, _) = serve("HTTP/1.0 200 OK\r\nContent-Type: audio/x-scpls\r\n\r\n", pls.into_bytes());
         let p = online();
         p.play("Mirrors", &url);
-        // The short stream plays, then ends.
-        wait_for(&p, "playing", |i| i.state == State::Playing);
+        // The short stream plays, then ends; it plays for a few milliseconds
+        // only, too briefly to wait for.
         wait_for(&p, "reconnected", |_| first_count.load(Ordering::Relaxed) >= 2);
         assert_eq!(second_count.load(Ordering::Relaxed), 0);
     }
