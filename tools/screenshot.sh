@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Updates docs/screenshot.png: the github-dark theme, playing SomaFM: DEF CON
-# Radio from the Electronic tag. Needs tmux, freeze and the network.
+# Radio from the Electronic tag, in foot on a headless sway. Needs sway, foot,
+# grim, the DejaVu fonts (ttf-dejavu) and the network.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-home=$(mktemp -d)
-session=goradion-screenshot
-trap 'tmux kill-session -t $session 2>/dev/null; rm -rf "$home"' EXIT
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
 
-mkdir -p "$home/.config/goradion"
-cat > "$home/.config/goradion/config.yaml" <<'EOF'
+mkdir -p "$work/home/.config/goradion"
+cat > "$work/home/.config/goradion/config.yaml" <<'EOF'
 theme: github-dark
 autoplay: true
 volume: 80
@@ -17,8 +17,22 @@ tag: Electronic
 station: https://somafm.com/defcon256.pls
 EOF
 
-tmux new-session -d -s $session -x 160 -y 42 "HOME=$home exec target/release/goradion"
-# Time for the stream to buffer and send the song title.
-sleep 10
-tmux capture-pane -p -e -t $session |
-    freeze --language ansi --background '#0d1117' --output docs/screenshot.png
+cat > "$work/foot.ini" <<'EOF'
+font=DejaVu Sans Mono:size=11
+pad=12x12
+EOF
+
+# The stream gets 10 s to buffer and send the song title; then sway quits.
+cat > "$work/sway.conf" <<EOF
+output HEADLESS-1 resolution 2880x1696 scale 2
+default_border none
+exec foot -c $work/foot.ini env HOME=$work/home $PWD/target/release/goradion
+exec sleep 10 && grim $PWD/docs/screenshot.png && swaymsg exit
+EOF
+
+if [[ -z ${XDG_RUNTIME_DIR:-} ]]; then
+    export XDG_RUNTIME_DIR=$work/run
+    mkdir -m 700 "$XDG_RUNTIME_DIR"
+fi
+WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman sway -c "$work/sway.conf" 2>"$work/sway.log" ||
+    { cat "$work/sway.log" >&2; exit 1; }

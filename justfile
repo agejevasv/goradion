@@ -57,6 +57,6 @@ tools:
     rustup component add clippy rustfmt
     cargo install --locked cargo-deny cargo-machete
 
-# Updates docs/screenshot.png; needs tmux, freeze and the network.
+# Updates docs/screenshot.png; needs sway, foot, grim, the DejaVu fonts and the network.
 screenshot: build
     tools/screenshot.sh
