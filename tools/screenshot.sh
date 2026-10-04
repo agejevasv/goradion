@@ -18,7 +18,7 @@ station: https://somafm.com/defcon256.pls
 EOF
 
 cat > "$work/foot.ini" <<'EOF'
-font=DejaVu Sans Mono:size=11
+font=DejaVu Sans Mono:size=13
 pad=12x12
 EOF
 
