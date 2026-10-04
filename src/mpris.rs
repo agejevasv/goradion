@@ -82,10 +82,12 @@ impl Published {
         let track = ObjectPath::try_from(format!("/org/goradion/track/{}", self.track)).expect("valid object path");
         m.insert("mpris:trackid", track.into());
         m.insert("xesam:url", s.url.clone().into());
-        // GNOME shows "Unknown artist" for a track without one.
-        m.insert("xesam:artist", vec![s.station.clone()].into());
-        let title = if s.song.is_empty() { &s.station } else { &s.song };
+        // Without a song, an empty artist: GNOME shows "Unknown artist" for
+        // none.
+        let (title, artist) =
+            if s.song.is_empty() { (&s.station, String::new()) } else { (&s.song, s.station.clone()) };
         m.insert("xesam:title", title.clone().into());
+        m.insert("xesam:artist", vec![artist].into());
         m
     }
 
@@ -380,6 +382,7 @@ mod tests {
         let stopped = Status { playing: false, song: String::new(), ..louder };
         assert_eq!(keys(&p.apply(stopped).unwrap()), ["CanPause", "Metadata", "PlaybackStatus"]);
         assert_eq!(p.status.playback_status(), "Paused", "Play resumes it");
-        assert_eq!(p.metadata()["xesam:artist"], Value::from(vec!["R"]));
+        assert_eq!(p.metadata()["xesam:title"], Value::from("R"));
+        assert_eq!(p.metadata()["xesam:artist"], Value::from(vec![""]));
     }
 }
