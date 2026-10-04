@@ -56,3 +56,7 @@ fix:
 tools:
     rustup component add clippy rustfmt
     cargo install --locked cargo-deny cargo-machete
+
+# Updates docs/screenshot.png; needs tmux, freeze and the network.
+screenshot: build
+    tools/screenshot.sh
