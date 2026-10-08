@@ -8,6 +8,8 @@ Listen to a curated list of stations, or search radio-browser.info for more.
 </p>
 
 ## Install
+On Arch Linux: `yay -S goradion` (or `goradion-bin` for the prebuilt binary).
+
 [Download goradion](https://github.com/agejevasv/goradion/releases/latest) for Linux, macOS or Windows.
 
 ### Build from source
