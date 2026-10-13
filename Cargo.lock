@@ -927,7 +927,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "signal-hook 0.4.4",
+ "signal-hook 0.4.5",
  "symphonia",
  "tiny_http",
  "unicode-segmentation",
@@ -1575,9 +1575,9 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "opus-rs"
-version = "0.1.34"
+version = "0.1.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3466ef5916cdb1236840f7b8ac018bfbdbba8bbdd141a0a9f2814c9aac8b9c96"
+checksum = "1880f411a21320dcb546c8f38f05ffb75643362ee0235437487999ed543e26ae"
 
 [[package]]
 name = "ordered-float"
@@ -2080,9 +2080,9 @@ checksum = "9278fb35b3e730abe136e9b395b5b81b96d06b9f5478a50f0c8430a2237b22de"
 
 [[package]]
 name = "rubato"
-version = "5.0.0"
+version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7cb1ffaf8738df50aab642a7f6465df81c6ba9e2818268053487165298114be"
+checksum = "cc1e951b9f5432ec1422f4dcfa5733fc501265902612edf5ef8bd8ecdd960930"
 dependencies = [
  "audioadapter",
  "audioadapter-buffers",
@@ -2280,9 +2280,9 @@ dependencies = [
 
 [[package]]
 name = "signal-hook"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2a0c28ca5908dbdbcd52e6fdaa00358ab88637f8ab33e1f188dd510eb44b53d"
+checksum = "b29ffa27d3d59a049bb328258de100f8012848d1b08d444e08bbc02ac468435e"
 dependencies = [
  "libc",
  "signal-hook-registry",
