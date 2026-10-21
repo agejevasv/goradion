@@ -3,8 +3,8 @@ name = "goradion"
 version = "0.13.0"
 edition = "2024"
 license = "Unlicense"
-# The newest minimum among the dependencies (ratatui, time); `just msrv` checks it.
-rust-version = "1.88"
+# The newest minimum among the dependencies (zbus); `just msrv` checks it.
+rust-version = "1.89"
 
 [dependencies]
 audioadapter-buffers = "5.2"
@@ -24,13 +24,13 @@ tiny_http = { version = "0.12.0", default-features = false }
 unicode-segmentation = "1.13.3"
 unicode-width = "0.2.2"
 url = "2.5.8"
-webpki-roots = "1.0.9"
+webpki-roots = "1.0.10"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.4.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = "5.19.0"
+zbus = "6.0.0"
 
 [profile.release]
 lto = true

@@ -13,7 +13,7 @@ On Arch Linux: `yay -S goradion` (or `goradion-bin` for the prebuilt binary).
 [Download goradion](https://github.com/agejevasv/goradion/releases/latest) for Linux, macOS or Windows.
 
 ### Build from source
-You need [Rust](https://rustup.rs) 1.88 or newer, and on Linux the ALSA headers and pkg-config
+You need [Rust](https://rustup.rs) 1.89 or newer, and on Linux the ALSA headers and pkg-config
 (`apt install libasound2-dev pkg-config`, `dnf install alsa-lib-devel`, `pacman -S alsa-lib`):
 ```bash
 cargo install --locked --git https://github.com/agejevasv/goradion

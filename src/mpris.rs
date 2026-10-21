@@ -9,11 +9,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use zbus::blocking::Connection;
-use zbus::blocking::connection::Builder;
+use zbus::connection::Builder;
 use zbus::fdo::{self, RequestNameFlags};
-use zbus::interface;
-use zbus::zvariant::{ObjectPath, Value};
+use zbus::{Connection, ObjectPath, Variant, block_on, interface};
 
 use crate::log;
 
@@ -62,7 +60,7 @@ impl Status {
     }
 }
 
-type Changes = HashMap<&'static str, Value<'static>>;
+type Changes = HashMap<&'static str, Variant<'static>>;
 
 #[derive(Default)]
 struct Published {
@@ -315,18 +313,20 @@ impl Mpris {
     pub fn start(on_command: impl Fn(Command) + Send + Sync + 'static) -> zbus::Result<Mpris> {
         let on_command: OnCommand = Arc::new(on_command);
         let published = Arc::new(Mutex::new(Published::default()));
-        let conn = Builder::session()?
-            .serve_at(PATH, Root { on_command: on_command.clone() })?
-            .serve_at(PATH, Player { on_command, published: published.clone() })?
-            .build()?;
+        let conn = block_on(
+            Builder::session()
+                .serve_at(PATH, Root { on_command: on_command.clone() })
+                .serve_at(PATH, Player { on_command, published: published.clone() })
+                .build(),
+        )?;
         // zbus's default flags let the next instance take the name; it gets
         // the spec's name for a second instance instead.
-        let flags = RequestNameFlags::DoNotQueue.into();
-        let name = match conn.request_name_with_flags(NAME, flags) {
+        let flags = RequestNameFlags::DO_NOT_QUEUE;
+        let name = match block_on(conn.request_name_with_flags(NAME, flags)) {
             Ok(_) => NAME.to_string(),
             Err(zbus::Error::NameTaken) => {
                 let name = format!("{NAME}.instance{}", std::process::id());
-                conn.request_name_with_flags(name.as_str(), flags)?;
+                block_on(conn.request_name_with_flags(name.as_str(), flags))?;
                 name
             }
             Err(e) => return Err(e),
@@ -339,9 +339,9 @@ impl Mpris {
     pub fn update(&self, status: Status) {
         let Some(changed) = self.published.lock().unwrap().apply(status) else { return };
         let body = (PLAYER_INTERFACE, changed, Vec::<&str>::new());
-        if let Err(e) =
-            self.conn.emit_signal(None::<&str>, PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged", &body)
-        {
+        let signal =
+            self.conn.emit_signal(None::<&str>, PATH, "org.freedesktop.DBus.Properties", "PropertiesChanged", &body);
+        if let Err(e) = block_on(signal) {
             log!("mpris: {e}");
         }
     }
@@ -375,14 +375,14 @@ mod tests {
         let song = Status { song: "S".into(), ..radio.clone() };
         assert_eq!(keys(&p.apply(song.clone()).unwrap()), ["Metadata"]);
         assert_eq!(p.track, 2, "a new song is a new track");
-        assert_eq!(p.metadata()["xesam:title"], Value::from("S"));
+        assert_eq!(p.metadata()["xesam:title"], Variant::from("S"));
         let louder = Status { volume: 60, ..song };
         assert_eq!(keys(&p.apply(louder.clone()).unwrap()), ["Volume"]);
         assert_eq!(p.track, 2);
         let stopped = Status { playing: false, song: String::new(), ..louder };
         assert_eq!(keys(&p.apply(stopped).unwrap()), ["CanPause", "Metadata", "PlaybackStatus"]);
         assert_eq!(p.status.playback_status(), "Paused", "Play resumes it");
-        assert_eq!(p.metadata()["xesam:title"], Value::from("R"));
-        assert_eq!(p.metadata()["xesam:artist"], Value::from(vec![""]));
+        assert_eq!(p.metadata()["xesam:title"], Variant::from("R"));
+        assert_eq!(p.metadata()["xesam:artist"], Variant::from(vec![""]));
     }
 }
